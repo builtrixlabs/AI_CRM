@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/canvas/api", () => ({ getLeadCanvas: mocks.getLeadCanvas }));
+vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
+  createLeadAction: vi.fn(),
+  updateLeadAction: vi.fn(),
+  transitionLeadAction: vi.fn(),
+}));
 
 import LeadCanvasPage from "@/app/(dashboard)/dashboard/leads/[id]/page";
 import { DEMO_ACTIVITIES, DEMO_LEAD } from "@/lib/canvas/fixture";

@@ -16,3 +16,7 @@ export {
   type FieldKind,
 } from "./field-renderers";
 export { useLeadActivityStream, type RealtimeArgs } from "./realtime";
+export { EditModeButton } from "./edit-mode-button";
+export { EditLeadForm } from "./edit-lead-form";
+export { TransitionFooter } from "./transition-footer";
+export { TransitionReasonDialog } from "./transition-reason-dialog";
