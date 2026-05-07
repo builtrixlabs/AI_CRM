@@ -30,5 +30,5 @@ CREATE POLICY cp_submissions_insert_own ON cp_submissions
   FOR INSERT TO authenticated
   WITH CHECK (
     submitted_by_user_id = auth.uid()
-    AND organization_id = auth.org_id()
+    AND organization_id = public.app_org_id()
   );

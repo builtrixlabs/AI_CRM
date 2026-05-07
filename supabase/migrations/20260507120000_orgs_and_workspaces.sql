@@ -6,7 +6,11 @@
 -- ── Helper: read organization_id claim from request JWT ──────────────────────
 -- Supabase Auth Hook (declared in migration 002) injects organization_id
 -- into the JWT for non-super_admin users. This SQL helper exposes it to RLS.
-CREATE OR REPLACE FUNCTION auth.org_id()
+--
+-- Lives in public (not auth) — Supabase managed databases reserve the auth
+-- schema and reject CREATE FUNCTION there. Functions are SECURITY INVOKER by
+-- default; safe to expose to authenticated.
+CREATE OR REPLACE FUNCTION public.app_org_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
@@ -17,7 +21,7 @@ AS $$
   )::uuid
 $$;
 
-CREATE OR REPLACE FUNCTION auth.is_super_admin()
+CREATE OR REPLACE FUNCTION public.app_is_super_admin()
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -27,6 +31,9 @@ AS $$
     false
   )
 $$;
+
+GRANT EXECUTE ON FUNCTION public.app_org_id() TO authenticated, service_role, anon;
+GRANT EXECUTE ON FUNCTION public.app_is_super_admin() TO authenticated, service_role, anon;
 
 -- ── organizations ────────────────────────────────────────────────────────────
 CREATE TABLE organizations (

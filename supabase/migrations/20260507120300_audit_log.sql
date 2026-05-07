@@ -43,8 +43,8 @@ CREATE POLICY audit_log_insert_service ON audit_log
 CREATE POLICY audit_log_select_org ON audit_log
   FOR SELECT TO authenticated
   USING (
-    (auth.is_super_admin() AND organization_id IS NULL) OR
-    (organization_id = auth.org_id())
+    (public.app_is_super_admin() AND organization_id IS NULL) OR
+    (organization_id = public.app_org_id())
   );
 
 -- INTENTIONAL: no UPDATE policy and no DELETE policy.
