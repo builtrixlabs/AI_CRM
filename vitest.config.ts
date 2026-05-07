@@ -26,6 +26,8 @@ export default defineConfig({
         "src/lib/auth/**",
         "src/lib/canvas/**",
         "src/components/canvas/**",
+        "src/lib/leads/**",
+        "src/app/(dashboard)/dashboard/_actions/**",
       ],
       thresholds: {
         lines: 80,

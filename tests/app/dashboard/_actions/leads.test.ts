@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   updateNodeData: vi.fn(),
   fetchNodeForUpdate: vi.fn(),
   revalidatePath: vi.fn(),
+  /** Toggle for the in-tenant pre-check in updateLeadAction. */
+  tenantCheckRow: null as { workspace_id: string } | null,
 }));
 
 vi.mock("@/lib/auth/getCurrentUser", () => ({
@@ -33,6 +35,22 @@ vi.mock("@/lib/nodes/api", () => ({
     }
   },
 }));
+vi.mock("@/lib/supabase/admin", () => ({
+  // assertLeadInTenant uses this; we return a chain whose final maybeSingle()
+  // resolves to mocks.tenantCheckRow.
+  getSupabaseAdmin: () => ({
+    from: () => {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () =>
+          Promise.resolve({ data: mocks.tenantCheckRow, error: null }),
+      };
+      return chain;
+    },
+  }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 import {
@@ -55,11 +73,21 @@ const SIGNED_IN_USER = {
 };
 
 beforeEach(() => {
-  for (const k of Object.keys(mocks) as (keyof typeof mocks)[]) mocks[k].mockReset();
+  for (const k of Object.keys(mocks) as (keyof typeof mocks)[]) {
+    const m = mocks[k];
+    if (
+      m != null &&
+      typeof (m as { mockReset?: unknown }).mockReset === "function"
+    ) {
+      (m as { mockReset: () => void }).mockReset();
+    }
+  }
   mocks.getCurrentUser.mockResolvedValue(SIGNED_IN_USER);
   mocks.resolveForUser.mockReturnValue(
     new Set(["leads:create", "leads:edit", "leads:view"]),
   );
+  // Default: tenant check passes (lead is in caller's org).
+  mocks.tenantCheckRow = { workspace_id: WS };
 });
 
 function fd(entries: Record<string, string>): FormData {
@@ -152,6 +180,17 @@ describe("updateLeadAction", () => {
     }
   });
 
+  it("cross-tenant: returns 'Lead not found' (no existence leak) when tenant check fails", async () => {
+    mocks.tenantCheckRow = null; // pre-check returns no row
+    const r = await updateLeadAction(LEAD, fd({ notes: "x" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("validation");
+      expect(r.message).toBe("Lead not found");
+    }
+    expect(mocks.updateNodeData).not.toHaveBeenCalled();
+  });
+
   it("happy path: dispatches to updateNodeData with merged partial", async () => {
     mocks.updateNodeData.mockResolvedValue(undefined);
     const r = await updateLeadAction(
@@ -207,7 +246,7 @@ describe("transitionLeadAction", () => {
     }
   });
 
-  it("happy forward transition dispatches to transitionLead", async () => {
+  it("happy forward transition dispatches to transitionLead with caller_org_id", async () => {
     mocks.transitionLead.mockResolvedValue(undefined);
     const r = await transitionLeadAction(
       fd({ lead_id: LEAD, target_state: "contacted" }),
@@ -218,8 +257,23 @@ describe("transitionLeadAction", () => {
     expect(args.lead_id).toBe(LEAD);
     expect(args.target_state).toBe("contacted");
     expect(args.actor).toBe(USER);
+    expect(args.caller_org_id).toBe(ORG);
     expect(args.reason).toBeUndefined();
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/dashboard/leads/${LEAD}`);
+  });
+
+  it("cross-tenant: maps 'Lead not found' from helper to validation error", async () => {
+    mocks.transitionLead.mockRejectedValue(
+      new Error("Lead not found or not visible: " + LEAD),
+    );
+    const r = await transitionLeadAction(
+      fd({ lead_id: LEAD, target_state: "contacted" }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("validation");
+      expect(r.message).toBe("Lead not found");
+    }
   });
 
   it("happy terminal transition with reason dispatches to transitionLead", async () => {
@@ -245,8 +299,8 @@ describe("transitionLeadAction", () => {
     if (!r.ok) expect(r.error).toBe("validation");
   });
 
-  it("maps generic transition error to unknown error", async () => {
-    mocks.transitionLead.mockRejectedValue(new Error("Lead not found or not visible"));
+  it("maps generic transition error (not 'not found') to unknown error", async () => {
+    mocks.transitionLead.mockRejectedValue(new Error("db connection lost"));
     const r = await transitionLeadAction(
       fd({ lead_id: LEAD, target_state: "contacted" }),
     );

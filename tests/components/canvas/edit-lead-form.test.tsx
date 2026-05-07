@@ -74,6 +74,42 @@ describe("EditLeadForm", () => {
     );
   });
 
+  it("supports typing into label / phone / email", () => {
+    render(
+      <EditLeadForm lead={DEMO_LEAD} onSaved={() => {}} onCancel={() => {}} />,
+    );
+    fireEvent.change(screen.getByTestId("edit-label"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.change(screen.getByTestId("edit-phone"), {
+      target: { value: "+91-9111111112" },
+    });
+    fireEvent.change(screen.getByTestId("edit-email"), {
+      target: { value: "x@y.com" },
+    });
+    expect(
+      (screen.getByTestId("edit-label") as HTMLInputElement).value,
+    ).toBe("Renamed");
+    expect(
+      (screen.getByTestId("edit-email") as HTMLInputElement).value,
+    ).toBe("x@y.com");
+  });
+
+  it("submits with email + label included when present", async () => {
+    mocks.updateLeadAction.mockResolvedValue({ ok: true });
+    render(
+      <EditLeadForm lead={DEMO_LEAD} onSaved={() => {}} onCancel={() => {}} />,
+    );
+    fireEvent.change(screen.getByTestId("edit-email"), {
+      target: { value: "p2@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("edit-save"));
+    await waitFor(() => expect(mocks.updateLeadAction).toHaveBeenCalledOnce());
+    const fd = mocks.updateLeadAction.mock.calls[0]![1] as FormData;
+    expect(fd.get("email")).toBe("p2@example.com");
+    expect(fd.get("label")).toBe(DEMO_LEAD.label);
+  });
+
   it("renders form-level error on unknown failure", async () => {
     mocks.updateLeadAction.mockResolvedValue({
       ok: false,

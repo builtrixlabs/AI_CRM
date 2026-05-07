@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { resolveForUser } from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   createLead,
   transitionLead,
@@ -14,6 +15,33 @@ import {
   type LeadState,
 } from "@/lib/leads";
 import { updateNodeData, NodeValidationError } from "@/lib/nodes/api";
+
+/**
+ * Confirms a lead row belongs to the caller's tenant before the action's
+ * mutating helper runs. Returns null if the lead is missing or in another
+ * tenant — caller maps null to a "validation" error (no existence leak).
+ *
+ * The mutating helpers (updateNodeData, transitionLead) use the service-role
+ * client which bypasses RLS, so this gate is the load-bearing tenant check
+ * for D-007 server actions.
+ */
+async function assertLeadInTenant(
+  lead_id: string,
+  caller_org_id: string,
+): Promise<{ workspace_id: string } | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("nodes")
+    .select("organization_id, workspace_id")
+    .eq("id", lead_id)
+    .eq("node_type", "lead")
+    .eq("organization_id", caller_org_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return null;
+  if (!data) return null;
+  return { workspace_id: (data as { workspace_id: string }).workspace_id };
+}
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -127,6 +155,15 @@ export async function updateLeadAction(
     return { ok: false, error: "validation", message: "Malformed lead_id" };
   }
 
+  if (!user.org_id) {
+    return { ok: false, error: "validation", message: "User has no org" };
+  }
+  const tenantCheck = await assertLeadInTenant(lead_id, user.org_id);
+  if (!tenantCheck) {
+    // Same shape as 'lead does not exist' — never leak cross-tenant existence.
+    return { ok: false, error: "validation", message: "Lead not found" };
+  }
+
   const partialPayload: Record<string, string | undefined> = {
     phone: stringOrUndef(formData.get("phone")),
     source: stringOrUndef(formData.get("source")),
@@ -199,11 +236,16 @@ export async function transitionLeadAction(
     };
   }
 
+  if (!user.org_id) {
+    return { ok: false, error: "validation", message: "User has no org" };
+  }
+
   try {
     await transitionLead({
       lead_id: parsed.data.lead_id,
       target_state: parsed.data.target_state as LeadState,
       actor: user.user.id,
+      caller_org_id: user.org_id,
       reason: parsed.data.reason,
     });
     revalidatePath(`/dashboard/leads/${parsed.data.lead_id}`);
@@ -214,6 +256,14 @@ export async function transitionLeadAction(
         ok: false,
         error: "validation",
         message: err.message,
+      };
+    }
+    if (err instanceof Error && /not found/i.test(err.message)) {
+      // Cross-tenant or missing — same shape, no existence leak.
+      return {
+        ok: false,
+        error: "validation",
+        message: "Lead not found",
       };
     }
     return {

@@ -134,24 +134,30 @@ function makeClientForTransition(opts: {
 }) {
   const updates: Record<string, unknown>[] = [];
   const auditRows: Record<string, unknown>[] = [];
+  /** Records every `eq(column, value)` invocation on the SELECT chain. */
+  const selectEqs: Array<[string, unknown]> = [];
   let updateError = opts.updateError ?? null;
+
+  const buildSelectChain = () => {
+    const chain = {
+      eq: vi.fn((col: string, value: unknown) => {
+        selectEqs.push([col, value]);
+        return chain;
+      }),
+      is: vi.fn(() => chain),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: opts.currentRow,
+        error: null,
+      }),
+    };
+    return chain;
+  };
 
   const client = {
     from: vi.fn((table: string) => {
       if (table === "nodes") {
         return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                is: vi.fn(() => ({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: opts.currentRow,
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          })),
+          select: vi.fn(() => buildSelectChain()),
           update: vi.fn((row: Record<string, unknown>) => {
             updates.push(row);
             return {
@@ -171,7 +177,15 @@ function makeClientForTransition(opts: {
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, updates, auditRows, setUpdateError(e: { message: string }) { updateError = e; } };
+  return {
+    client,
+    updates,
+    auditRows,
+    selectEqs,
+    setUpdateError(e: { message: string }) {
+      updateError = e;
+    },
+  };
 }
 
 describe("transitionLead", () => {
@@ -180,7 +194,7 @@ describe("transitionLead", () => {
       currentRow: { state: "new", organization_id: ORG, workspace_id: WS },
     });
     await transitionLead(
-      { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR },
+      { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR, caller_org_id: ORG },
       t.client as never,
     );
     expect(t.updates).toHaveLength(1);
@@ -190,6 +204,32 @@ describe("transitionLead", () => {
     expect(t.auditRows).toHaveLength(1);
     expect(t.auditRows[0]!.action).toBe("state_change");
     expect(t.auditRows[0]!.diff).toEqual({ from: "new", to: "contacted" });
+    // Tenant gate: SELECT must filter by organization_id = caller_org_id.
+    expect(t.selectEqs).toContainEqual(["organization_id", ORG]);
+  });
+
+  it("cross-tenant: caller_org_id mismatch → SELECT returns null → 'not found' (no leak)", async () => {
+    // currentRow=null mocks the DB response when organization_id filter
+    // excludes the lead's row.
+    const t = makeClientForTransition({ currentRow: null });
+    await expect(
+      transitionLead(
+        {
+          lead_id: "11111111-2222-4333-8444-555555555555",
+          target_state: "contacted",
+          actor: ACTOR,
+          caller_org_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+        },
+        t.client as never,
+      ),
+    ).rejects.toThrow(/not found/i);
+    expect(t.updates).toHaveLength(0);
+    expect(t.auditRows).toHaveLength(0);
+    // Confirm the SELECT chain was actually filtered by the wrong org.
+    expect(t.selectEqs).toContainEqual([
+      "organization_id",
+      "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+    ]);
   });
 
   it("terminal transition with reason adds reason to diff", async () => {
@@ -201,6 +241,7 @@ describe("transitionLead", () => {
         lead_id: "11111111-2222-4333-8444-555555555555",
         target_state: "lost",
         actor: ACTOR,
+        caller_org_id: ORG,
         reason: "duplicate of existing lead",
       },
       t.client as never,
@@ -232,7 +273,7 @@ describe("transitionLead", () => {
     });
     await expect(
       transitionLead(
-        { lead_id: "not-a-uuid", target_state: "contacted", actor: ACTOR },
+        { lead_id: "not-a-uuid", target_state: "contacted", actor: ACTOR, caller_org_id: ORG },
         t.client as never,
       ),
     ).rejects.toThrow();
@@ -243,7 +284,7 @@ describe("transitionLead", () => {
     const t = makeClientForTransition({ currentRow: null });
     await expect(
       transitionLead(
-        { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR },
+        { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR, caller_org_id: ORG },
         t.client as never,
       ),
     ).rejects.toThrow(/not found/i);
@@ -270,7 +311,7 @@ describe("transitionLead", () => {
     });
     await expect(
       transitionLead(
-        { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR },
+        { lead_id: "11111111-2222-4333-8444-555555555555", target_state: "contacted", actor: ACTOR, caller_org_id: ORG },
         t.client as never,
       ),
     ).rejects.toThrow(/db fail/);

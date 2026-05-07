@@ -538,3 +538,141 @@ costs ~2µs per call and removes the surface entirely. Defense-in-depth.
 **Anchor:** [src/lib/canvas/api.ts](../src/lib/canvas/api.ts) `UUID_RE`.
 
 ---
+
+## 2026-05-07 — D-007 Lead lifecycle on Canvas
+
+### D-007.1 State machine in pure TS, not a DB CHECK
+
+**Decision:** The lead state graph lives in `src/lib/leads/transitions.ts`
+as a `Readonly<Record<LeadState, readonly LeadState[]>>` literal +
+`assertTransitionAllowed` pure function. No `CHECK (state, target_state)`
+constraint at the DB.
+
+**Alternatives considered:**
+- DB-side CHECK on a transitions table. **Rejected** — would need a
+  migration to change the graph, slowing iteration. The audit log
+  records every (from, to) pair anyway, so auditors can see when a
+  graph violation was attempted.
+- Trigger-based enforcement that reads the prior state. **Rejected** —
+  same drawback, plus harder to debug.
+
+**Rationale:** Same trade-off as D-002.1 (Zod over per-type CHECKs).
+App layer + tests own the contract; DB stays additive-friendly.
+
+### D-007.2 `transitionLead` is separate from `updateNodeData`
+
+**Decision:** A dedicated `transitionLead` helper (in
+`src/lib/leads/api.ts`) handles state transitions instead of routing
+through D-002's `updateNodeData`. Two paths now exist for `nodes`
+mutations.
+
+**Why:** `updateNodeData` writes audit rows with
+`diff: { before, after }` (full data snapshot). State transitions need
+`diff: { from, to, reason? }` for compact, RERA-friendly audits. Trying
+to fold both shapes into `updateNodeData` would either bloat its API or
+double-write audit rows.
+
+**Anchor:** [src/lib/leads/api.ts](../src/lib/leads/api.ts) `transitionLead`.
+
+### D-007.3 Sticky terminals in V0; reactivation deferred to V1
+
+**Decision:** `lost`, `on_hold`, `junk` are dead-end states in V0.
+`TRANSITIONS[lost] = []`. Reactivation flow ("Restore to new") is V1.
+
+**Rationale:** Reactivation needs a UX decision (who can reactivate?
+does it create a new audit chain or amend the old one? what about
+RERA implications?). Out of scope for V0 ship.
+
+### D-007.4 Whole-canvas edit-mode toggle (not per-field inline)
+
+**Decision:** A single "Edit" button in the Header swaps the entire
+Header + Field block for an `EditLeadForm`. No per-field click-to-edit.
+
+**Alternatives considered:**
+- Per-field inline editing (click phone → input becomes editable).
+  **Rejected for V0** — more components, more state, more edge cases
+  (validation timing, partial saves). Whole-canvas toggle is one
+  state bit.
+
+**Rationale:** Ship a usable lead-edit flow now; per-field UX is V1
+once we know what fields users actually edit most often.
+
+### D-007.5 Terminal transitions require a reason; forward transitions don't
+
+**Decision:** `transitionInputSchema.superRefine` requires a non-empty
+`reason` iff `target_state ∈ TERMINAL_STATES`. Forward transitions
+(new → contacted, contacted → qualified) don't require a reason.
+
+**Rationale:** Lost / On hold / Junk are RERA-relevant decisions —
+the audit log needs a free-text "why". Forward transitions are
+expected pipeline progression and don't need a reason.
+
+### D-007.6 Server-action ActionResult discriminated union
+
+**Decision:** All three server actions (`createLeadAction`,
+`updateLeadAction`, `transitionLeadAction`) return
+`{ ok: true; data? } | { ok: false; error: 'permission' | 'validation' | 'unknown'; fieldErrors?; message? }`.
+
+**Rationale:** Calling components can switch on `result.error` to
+render the right inline UI (permission banner, field-error map,
+form-level error). Keeps the server-action layer typed without
+exceptions crossing the RSC boundary.
+
+### D-007.7 `leads:edit` covers both field-edit and state-transition
+
+**Decision:** Both field edits (`updateLeadAction`) and state
+transitions (`transitionLeadAction`) gate on the same `leads:edit`
+permission. No separate `leads:transition` perm in V0.
+
+**Trade-off:** if we later want a workspace_admin who can transition
+without editing fields (or vice versa), we'd add `leads:transition`
+to the catalog. One literal-union change in `rbac.ts`. Acceptable.
+
+### D-007.8 Stacked PR off feature/006 while D-006 PR is open
+
+**Decision:** D-007's branch (`feature/007-lead-lifecycle`) was created
+off `feature/006-intelligent-canvas` while PR #6 is still open. D-007's
+PR will target `feature/006-intelligent-canvas` until D-006 merges to
+`v1`, then rebase + retarget to `v1`.
+
+**Rationale:** Avoids blocking D-007 progress on operator-side merge
+review. D-007 only adds files + adds optional props to LeadCanvas —
+rebase risk is low.
+
+### D-007.9 Mandatory `caller_org_id` filter on every service-role mutation
+
+**Decision:** Every server action that mutates a tenant-owned row via
+the service-role admin client MUST first prove the row belongs to the
+caller's `org_id`. Two patterns implemented in D-007:
+
+1. **Helper-internal** — `transitionLead` accepts `caller_org_id` as a
+   **required** field on `TransitionLeadArgs`. The helper's SELECT
+   chain includes `.eq("organization_id", caller_org_id)` before
+   reading the current state; a mismatch returns null and the helper
+   throws `Lead not found or not visible: <id>`.
+2. **Action-layer pre-check** — `updateLeadAction` calls
+   `assertLeadInTenant(lead_id, user.org_id)` (a service-role lookup
+   filtered by `organization_id = user.org_id`) before invoking
+   D-002's `updateNodeData`. Returns `{ ok:false, error:'validation',
+   message:'Lead not found' }` on null — same shape as a genuine
+   missing lead, so existence isn't leaked across tenants.
+
+**Why both patterns:** D-002's `updateNodeData` doesn't accept a
+`caller_org_id` argument (D-002 predates this threat-model surface).
+Rather than amend D-002, D-007 inserts a gate one frame upstream.
+New helpers like `transitionLead` take the stricter approach:
+required `caller_org_id` parameter so TypeScript enforces the gate
+at every call site.
+
+**Discovered:** First Gate-4 security scan flagged this as CRITICAL —
+the original code used the service-role client (which bypasses RLS)
+without explicit `org_id` filtering, allowing IDOR across tenants.
+Closed before commit; rescan went clean.
+
+**Anchors:**
+- [src/lib/leads/api.ts](../src/lib/leads/api.ts) `transitionLead`
+- [src/app/(dashboard)/dashboard/_actions/leads.ts](../src/app/(dashboard)/dashboard/_actions/leads.ts) `assertLeadInTenant`
+- [tests/lib/leads/api.test.ts](../tests/lib/leads/api.test.ts) cross-tenant unit test
+- [tests/integration/lead-create-edit-transition.test.ts](../tests/integration/lead-create-edit-transition.test.ts) cross-tenant integration
+
+---

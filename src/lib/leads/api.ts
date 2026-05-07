@@ -55,6 +55,12 @@ export type TransitionLeadArgs = {
   lead_id: string;
   target_state: LeadState;
   actor: string;
+  /**
+   * Caller's tenant. Required — the helper uses the service-role client
+   * (which bypasses RLS) so it MUST filter by org explicitly to prevent
+   * cross-tenant writes per Constitution II.
+   */
+  caller_org_id: string;
   reason?: string;
 };
 
@@ -64,6 +70,10 @@ export type TransitionLeadArgs = {
  *
  * Path bypasses D-002's `updateNodeData` because the audit diff shape differs
  * (`{from,to}` vs `{before,after}`). Documented in memory/decisions.md (D-007).
+ *
+ * Tenant-isolation contract: the SELECT filters by `organization_id =
+ * args.caller_org_id`. A cross-tenant lead_id returns null and we throw
+ * "not found" — same shape as a missing lead, so existence isn't leaked.
  *
  * Throws:
  *   - generic Error on malformed lead_id
@@ -90,6 +100,7 @@ export async function transitionLead(
     .select("state, organization_id, workspace_id")
     .eq("id", args.lead_id)
     .eq("node_type", "lead")
+    .eq("organization_id", args.caller_org_id)
     .is("deleted_at", null)
     .maybeSingle();
 

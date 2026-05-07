@@ -85,6 +85,25 @@ describe("NewLeadDialog", () => {
     );
   });
 
+  it("supports typing into email + notes and clicking Cancel closes the dialog", () => {
+    render(<NewLeadDialog />);
+    fireEvent.click(screen.getByTestId("new-lead-trigger"));
+    fireEvent.change(screen.getByTestId("new-phone"), {
+      target: { value: "+91-9000000000" },
+    });
+    fireEvent.change(screen.getByTestId("new-email"), {
+      target: { value: "x@y.com" },
+    });
+    fireEvent.change(screen.getByTestId("new-notes"), {
+      target: { value: "blob" },
+    });
+    expect(
+      (screen.getByTestId("new-email") as HTMLInputElement).value,
+    ).toBe("x@y.com");
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByTestId("new-lead-dialog")).toBeNull();
+  });
+
   it("renders form-level error on unknown failure", async () => {
     mocks.createLeadAction.mockResolvedValue({
       ok: false,

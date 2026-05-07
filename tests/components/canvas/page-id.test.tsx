@@ -6,10 +6,18 @@ const mocks = vi.hoisted(() => ({
     throw new Error("__NEXT_NOT_FOUND__");
   }),
   getLeadCanvas: vi.fn(),
+  getCurrentUser: vi.fn(),
+  resolveForUser: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/canvas/api", () => ({ getLeadCanvas: mocks.getLeadCanvas }));
+vi.mock("@/lib/auth/getCurrentUser", () => ({
+  getCurrentUser: mocks.getCurrentUser,
+}));
+vi.mock("@/lib/auth/permissions", () => ({
+  resolveForUser: mocks.resolveForUser,
+}));
 vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
   createLeadAction: vi.fn(),
   updateLeadAction: vi.fn(),
@@ -30,16 +38,37 @@ describe("/dashboard/leads/[id]", () => {
     expect(mocks.getLeadCanvas).toHaveBeenCalledWith("missing-id");
   });
 
-  it("returns a React element when getLeadCanvas resolves", async () => {
+  it("returns a React element when getLeadCanvas resolves (no perms)", async () => {
     mocks.getLeadCanvas.mockResolvedValue({
       lead: DEMO_LEAD,
       activities: DEMO_ACTIVITIES,
     });
+    mocks.getCurrentUser.mockResolvedValue(null);
     mocks.notFound.mockClear();
     const result = await LeadCanvasPage({
       params: Promise.resolve({ id: DEMO_LEAD.id }),
     });
     expect(result).toBeTruthy();
     expect(mocks.notFound).not.toHaveBeenCalled();
+  });
+
+  it("passes canEdit/canTransition=true when user has leads:edit", async () => {
+    mocks.getLeadCanvas.mockResolvedValue({
+      lead: DEMO_LEAD,
+      activities: DEMO_ACTIVITIES,
+    });
+    mocks.getCurrentUser.mockResolvedValue({
+      user: { id: "u", email: "" },
+      profile: { id: "u", display_name: "u", base_role: "sales_rep" },
+      org_id: DEMO_LEAD.organization_id,
+      workspace_ids: [DEMO_LEAD.workspace_id],
+      app_roles: [],
+    });
+    mocks.resolveForUser.mockReturnValue(new Set(["leads:edit"]));
+    const result = (await LeadCanvasPage({
+      params: Promise.resolve({ id: DEMO_LEAD.id }),
+    })) as { props: { canEdit: boolean; canTransition: boolean } };
+    expect(result.props.canEdit).toBe(true);
+    expect(result.props.canTransition).toBe(true);
   });
 });
