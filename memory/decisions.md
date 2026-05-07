@@ -157,3 +157,86 @@ A blanket `0 rows` would imply `getCurrentUser()` returns null for every
 super_admin, breaking the platform surface entirely.
 
 ---
+
+## 2026-05-07 — D-002 Graph Data Model
+
+### D-002.1 Single `nodes` table with `node_type` discriminator
+
+**Decision:** One `nodes` table for all 10 node types instead of per-entity
+tables (`leads`, `deals`, `contacts`, ...). `data jsonb` carries type-specific
+fields validated by Zod in TypeScript.
+
+**Alternatives considered:**
+- Per-type tables. **Rejected** — Canvas component would have to be rewritten per type, cross-type semantic search becomes a UNION-ALL nightmare, provenance contract gets duplicated 10× and drifts.
+- Triple store / RDF. **Rejected** — overkill, tooling sparse.
+
+**Rationale:** PRD §7 conclusion. One Canvas, one provenance contract,
+one embedding query, one custom-fields engine (D-112). Trade-off: validation
+moves to the app layer (TypeScript / Zod). Documented in baseline 110 §II.
+
+### D-002.2 Zod schemas as the type-safety layer for `data` jsonb
+
+**Decision:** `nodes.data` is `jsonb NOT NULL DEFAULT '{}'` — no per-type
+column constraints. App-level Zod schemas in `src/lib/nodes/schemas/<type>.ts`
+are the only enforcement mechanism for type-specific shapes. The Zod schemas
+ratify into baseline 110 and cannot change without an amendment directive.
+
+**Alternatives considered:**
+- DB-level CHECK constraints on a (`node_type`, `data`) tuple. **Rejected** — Postgres can't easily express "if node_type='lead' then data->>'phone' IS NOT NULL" across all 10 types without an explosion of CHECK clauses.
+- Per-type derived VIEWs with column constraints. **Rejected** — adds layer; query routing complexity.
+
+**Trade-off:** runtime calls that bypass `createNode`/`updateNodeData` could
+write malformed `data`. Mitigation: convention + tests; consumers go through
+the API helpers. Future RLS layer in D-009 may add a row-level Zod check via
+a Postgres function if drift surfaces.
+
+### D-002.3 Embedding queue + deferred-d009 stub pattern
+
+**Decision:** D-002 ships the schema, the trigger that enqueues refreshes,
+and an Inngest function that marks every queued row `status='deferred-d009'`
+without computing embeddings. D-009 (Model Gateway) replaces the function
+body to actually call `text-embedding-3-small`.
+
+**Rationale:** D-002 is the right place to land the schema; D-009 is the
+right place to land the LLM call. Splitting them means D-002 doesn't need
+a model provider configured. Once D-009 ships, `embedding_queue WHERE
+status='deferred-d009'` is the backfill set.
+
+### D-002.4 Inngest is the queue/workflow runtime
+
+**Decision:** Builtrix CRM uses Inngest (per Constitution VII stack discipline)
+for every queue and scheduled job. First use lands in D-002 (embedding
+refresh); D-010 will add the WhatsApp inbound queue, D-013 the Call Audit
+event handler.
+
+**Rationale:** Constitution VII pre-locked Inngest. D-002 is the first
+directive that needs a queue, so D-002 is where the runtime lands. Single
+`inngest.config.ts` + `/api/inngest` route reused by every later directive's
+function.
+
+### D-002.5 Test orgs use unique slugs because audit_log immutability prevents cleanup
+
+**Decision:** Integration tests that exercise audit-writing code paths
+(node mutations, RLS checks against the audit table) MUST use a per-run
+unique slug (e.g., `\`test-foo-${Date.now()}\``) so they don't try to
+re-use a slug that's now permanently bound to audit_log rows. Static slugs
+remain fine for tests that don't accumulate audit history.
+
+**Why:** `audit_log.organization_id` has an FK to `organizations`. The
+append-only trigger blocks both DELETE and ON DELETE SET NULL. Once a test
+writes any audit row referencing an org, the org cannot be deleted. Result:
+re-running the test fails on `organizations_slug_key` unique constraint.
+
+**Trade-off:** orphan orgs accumulate in the test DB over many runs. Acceptable;
+periodic manual sweep is fine.
+
+### D-002.6 `inngest.createFunction` 2-arg signature with `triggers` in options
+
+**Decision:** Use the modern Inngest 2-arg signature where triggers (event
++ cron) live inside the options object's `triggers` array. The old 3-arg
+form with triggers as the second positional argument is rejected by the
+TypeScript types in inngest@v3+.
+
+**Why:** Caught at `npm run build` — `Expected 2 arguments, but got 3`.
+
+---

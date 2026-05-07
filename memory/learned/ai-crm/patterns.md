@@ -88,6 +88,56 @@ Format:
   object is present in pg_catalog.
 - Anchor: `tests/fixtures/cp-test-table.sql`.
 
+## node-data-as-jsonb-with-zod-validation  (confidence: 1)
+
+- First seen: D-002
+- Description: Polymorphic data on a single table goes in a `jsonb`
+  column with `NOT NULL DEFAULT '{}'`. Type-specific shape is enforced
+  in the app layer by Zod schemas (one per discriminator value). Mutation
+  helpers (`createX`, `updateXData`) validate input against
+  `schemaFor(type).safeParse(input.data)` BEFORE the DB write. Throws a
+  typed validation error containing the Zod issues; DB never sees
+  malformed input. Tests pass invalid payloads to assert the helpers
+  reject without touching the client.
+- Anchor: `src/lib/nodes/api.ts` + `src/lib/nodes/schemas/`.
+
+## embedding-queue-pattern  (confidence: 1)
+
+- First seen: D-002
+- Description: For long-running async work that should not block the
+  triggering write (e.g. computing embeddings on every node update),
+  install a queue table + a Postgres trigger that AFTER INSERT/UPDATE OF
+  the relevant columns inserts a row into the queue. The trigger function
+  is `SECURITY DEFINER` so writes succeed even when the queue has no
+  authenticated INSERT policy. A worker (Inngest function) processes the
+  queue via cron + pg_notify event. UPDATE OF a column NOT in the
+  trigger's list (e.g. `state`-only or `deleted_at`-only changes) does
+  NOT enqueue — useful for separating data churn from semantic churn.
+- Anchor: `supabase/migrations/20260507130400_embedding_queue.sql`.
+
+## inngest-job-stub-deferred  (confidence: 1)
+
+- First seen: D-002
+- Description: When directive A creates infrastructure that directive B
+  will populate, ship the Inngest function body as a stub that marks
+  queued items `status='deferred-<future-directive>'` and logs a TODO.
+  The trigger / queue / function shape is real; only the worker-body is
+  empty. Future directive replaces just the body. This keeps the queue
+  contract committed early so dependent directives can rely on it.
+- Anchor: `src/lib/inngest/functions/embedding-refresh.ts`.
+
+## per-run-test-slugs-for-audit-tables  (confidence: 1)
+
+- First seen: D-002 (B9 audit-on-node-mutations test)
+- Description: Integration tests that exercise paths writing to an
+  append-only audit table MUST construct unique fixture slugs per run
+  (e.g. `\`test-foo-${Date.now()}\``). The audit table's append-only
+  trigger plus its FK to organizations means once an org has audit
+  history, neither DELETE nor `ON DELETE SET NULL` can clean it up —
+  static slugs collide with `_slug_key` UNIQUE constraint on the next
+  run. Tests that don't write audit rows can still use static slugs.
+- Anchor: `tests/integration/audit-on-node-mutations.test.ts`.
+
 ## edge-middleware-as-routing-policy  (confidence: 1)
 
 - First seen: D-001
