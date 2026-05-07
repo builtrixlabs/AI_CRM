@@ -138,6 +138,44 @@ Format:
   run. Tests that don't write audit rows can still use static slugs.
 - Anchor: `tests/integration/audit-on-node-mutations.test.ts`.
 
+## permission-catalog-as-literal-union  (confidence: 1)
+
+- First seen: D-003
+- Description: For systems where a fixed string set is referenced from
+  many places (permissions, event types, agent kinds, etc.), define the
+  catalog as `const X = [...] as const` and derive the type with
+  `(typeof X)[number]`. Ban a sibling `string` alias. Result: TypeScript
+  rejects unknown members at compile time, callers get autocomplete, and
+  there's exactly one source. A "no orphans" unit test asserts every
+  catalog member is referenced from at least one downstream map.
+- Anchor: `src/lib/auth/rbac.ts` (PERMISSIONS / Permission /
+  BASE_ROLE_PERMS), `tests/lib/auth/permission-catalog.test.ts`.
+
+## belt-and-suspenders-platform-only  (confidence: 1)
+
+- First seen: D-003
+- Description: For invariants that protect against escalation
+  (PLATFORM_ONLY override rejection, audit-log immutability, RLS), enforce
+  in BOTH layers — the application resolver AND a DB constraint or
+  trigger. Resolver protects normal authenticated paths; DB protects
+  against bypass paths (service-role writes, future agents writing
+  directly). Drift detection (CI script that diffs the two lists)
+  is a follow-up; the cost of duplication is far less than the cost of
+  a single-layer escape.
+- Anchor: `src/lib/auth/rbac.ts` PLATFORM_ONLY_PERMISSIONS +
+  `supabase/migrations/20260507140100_role_permission_overrides_guard.sql`.
+
+## cached-resolver-set-per-request  (confidence: 1)
+
+- First seen: D-003
+- Description: Permission / authz helpers accept an optional pre-resolved
+  `Set<Permission>` argument so server actions can resolve effective
+  permissions ONCE per request and pass it to every gate site. No global
+  cache, no Next.js `cache()` integration — the data flow stays explicit.
+  Hot paths benefit; cold paths just call the resolver inline.
+- Anchor: `src/lib/auth/permissions.ts` (hasPermission /
+  requirePermission / requireAnyOf accept `cached?: Set<Permission>`).
+
 ## edge-middleware-as-routing-policy  (confidence: 1)
 
 - First seen: D-001
