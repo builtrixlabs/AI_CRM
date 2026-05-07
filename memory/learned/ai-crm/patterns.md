@@ -210,6 +210,47 @@ Format:
   printer-friendly / search-engine-friendly without tabs hiding content.
 - Anchor: `src/app/(platform)/platform/organizations/[id]/page.tsx`.
 
+## wizard-state-machine-via-jsonb  (confidence: 1)
+
+- First seen: D-005
+- Description: Multi-step onboarding / wizard flows store their progress
+  in a single `jsonb` column on the parent row (e.g. `organizations.
+  onboarding_state`). The shape is defined by a Zod schema with strict
+  defaults so the column accepts an empty `'{}'` payload. A helper
+  function (`advanceStep`) is the only state-mutating entry point — it
+  validates per-step Zod, applies the side-effect (existing tables when
+  appropriate; jsonb when not), advances `current_step`, appends to
+  `completed_steps`, and writes one audit row per advance. Stateless and
+  re-entrant; the same step ID can be submitted twice without regressing.
+- Anchor: `src/lib/admin/onboarding.ts` + `tests/lib/admin/onboarding.test.ts`.
+
+## hard-gate-as-typed-error-class  (confidence: 1)
+
+- First seen: D-005
+- Description: When a flow has steps that cannot be skipped, enforce at
+  the helper layer with a typed Error subclass (`OnboardingHardGateError`)
+  carrying the offending step id. UI also hides "Skip" buttons for
+  defense-in-depth, but the throw is the load-bearing enforcement —
+  catches automation paths that don't go through the UI. Helpers separate
+  validation errors (`OnboardingPayloadError` carrying Zod issues) from
+  hard-gate errors so the action layer can map each to the right UX.
+- Anchor: `src/lib/admin/onboarding.ts` (HARD_GATED_STEPS +
+  OnboardingHardGateError).
+
+## single-dispatcher-server-action  (confidence: 1)
+
+- First seen: D-005
+- Description: When a UI walks N similar steps that all dispatch to the
+  same backend helper, ship ONE server action that reads the step id
+  from FormData and routes accordingly, rather than N separate actions.
+  Each step's UI sets `<input type="hidden" name="step" value="..."/>`
+  and the rest of its fields; `extractPayload(step, fd)` is a typed
+  helper that pulls the right shape per step. Saves ~150 lines of
+  boilerplate with no behavioural difference. Splits later are trivial
+  if any step grows complex enough.
+- Anchor: `src/app/(admin)/admin/onboarding/actions.ts`
+  (onboardingAction + extractPayload).
+
 ## edge-middleware-as-routing-policy  (confidence: 1)
 
 - First seen: D-001
