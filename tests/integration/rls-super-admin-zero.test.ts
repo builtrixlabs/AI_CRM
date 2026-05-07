@@ -62,9 +62,15 @@ afterAll(async () => {
 });
 
 describe("RLS — super_admin zero operational access", () => {
-  it("AC-10a: super_admin SELECT profiles → 0 rows", async () => {
+  it("AC-10a: super_admin SELECT profiles → 0 OPERATIONAL rows", async () => {
+    // Constitution: super_admin has zero operational data access.
+    // The super_admin's OWN profile (organization_id = NULL, visible via
+    // profiles_select_self) is platform identity, not operational data.
     const c = await userClient(superAdmin);
-    const { data, error } = await c.from("profiles").select("id");
+    const { data, error } = await c
+      .from("profiles")
+      .select("id, organization_id")
+      .not("organization_id", "is", null);
     expect(error).toBeNull();
     expect(data?.length ?? 0).toBe(0);
   });

@@ -32,3 +32,7 @@ CREATE POLICY cp_submissions_insert_own ON cp_submissions
     submitted_by_user_id = auth.uid()
     AND organization_id = public.app_org_id()
   );
+
+-- Notify PostgREST to refresh its schema cache so the new table is queryable
+-- via the JS / REST client without restarting the gateway.
+NOTIFY pgrst, 'reload schema';

@@ -12,6 +12,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resolve } from "node:path";
 import {
   adminClient,
   cleanupBySlug,
@@ -22,6 +23,7 @@ import {
   userClient,
   type ProvisionedUser,
 } from "./helpers/setup";
+import { execSqlFile } from "./helpers/sql";
 
 const SLUG = "test-cp-iso";
 
@@ -49,12 +51,16 @@ beforeAll(async () => {
     organization_id: orgId,
   });
 
-  // Probe the fixture table.
-  const { error } = await adminClient
-    .from("cp_submissions")
-    .select("id")
-    .limit(0);
-  fixtureExists = !error;
+  // Apply (or reuse) the cp_submissions test fixture. Idempotent —
+  // tests/fixtures/cp-test-table.sql uses CREATE TABLE IF NOT EXISTS and
+  // DROP POLICY IF EXISTS.
+  try {
+    await execSqlFile(resolve("tests/fixtures/cp-test-table.sql"));
+    fixtureExists = true;
+  } catch (err) {
+    console.warn("cp_submissions fixture failed to apply:", err);
+    fixtureExists = false;
+  }
 }, 30_000);
 
 afterAll(async () => {
