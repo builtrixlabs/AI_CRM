@@ -125,7 +125,14 @@ export async function userClient(
   return c;
 }
 
-/** Best-effort cleanup — call from afterAll. */
+/**
+ * Best-effort cleanup — call from afterAll.
+ * Deletes child rows then attempts the org delete. The org delete may fail
+ * if `audit_log` has rows referencing this org (audit_log is append-only
+ * via trigger, so neither DELETE nor ON DELETE SET NULL works). In that
+ * case we leave the orphan org behind — tests using slugs that may
+ * accumulate audit history should use per-run unique slugs.
+ */
 export async function cleanupBySlug(slug: string): Promise<void> {
   const { data } = await adminClient
     .from("organizations")
@@ -133,8 +140,7 @@ export async function cleanupBySlug(slug: string): Promise<void> {
     .eq("slug", slug)
     .maybeSingle();
   if (!data) return;
-  // Cascades: profiles ON DELETE CASCADE, workspaces / teams ON DELETE RESTRICT,
-  // so we manually clean those first.
+  await adminClient.from("nodes").delete().eq("organization_id", data.id);
   await adminClient.from("teams").delete().eq("organization_id", data.id);
   await adminClient.from("workspaces").delete().eq("organization_id", data.id);
   await adminClient.from("user_app_roles").delete().eq("organization_id", data.id);

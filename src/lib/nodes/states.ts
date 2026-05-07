@@ -44,9 +44,9 @@ const TERMINAL_STATES: Partial<Record<NodeType, readonly string[]>> = {
   document: ["signed"],
 };
 
-const ALLOWED_SETS: Record<NodeType, ReadonlySet<string>> = Object.fromEntries(
+const ALLOWED_SETS = Object.fromEntries(
   Object.entries(ALLOWED_STATES).map(([k, v]) => [k, new Set(v)])
-) as Record<NodeType, ReadonlySet<string>>;
+) as unknown as Record<NodeType, ReadonlySet<string>>;
 
 /**
  * True iff `state` is valid for this node_type. For stateless types (empty
