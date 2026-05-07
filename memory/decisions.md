@@ -318,3 +318,64 @@ A baseline doc would duplicate the contents and drift. Future directives
 that depend on a permission existing should add a unit test asserting it.
 
 ---
+
+## 2026-05-07 — D-004 Super Admin Surfaces
+
+### D-004.1 Stacked sections, not tabs
+
+**Decision:** `/platform/organizations/[id]` uses 4 stacked Card sections
+(Info / Admins / Subscription / Recent audit). Constitution IX forbids
+tabs; PRD §4.3's "tabs" reference is overridden by the constitution.
+
+### D-004.2 Manual rollback on partial provisioning failure
+
+**Decision:** Supabase JS client doesn't expose Postgres transactions.
+`provisionOrganization` runs 6 inserts in order; on any failure it runs
+compensating deletes in reverse order. Tests cover every failure point.
+
+**Alternatives considered:** A `CREATE FUNCTION provision_org(...)`
+called via RPC. **Rejected for D-004** — would add a 7th migration and
+hide the rollback behind an opaque function. Future hardening directive
+can move to a function if drift becomes a problem.
+
+### D-004.3 createUser + generateLink instead of inviteUserByEmail
+
+**Decision:** Provisioning calls `auth.admin.createUser({ email_confirm:true })`
+to create the org_admin user without sending Supabase's default email,
+then mints a magic-link via `auth.admin.generateLink`. The link is
+returned to the caller for out-of-band delivery.
+
+**Why:** Supabase's `inviteUserByEmail` rejected our test domain
+(`@test.builtrix.in`) with "Email address invalid" — its email-sending
+path has stricter domain validation than `createUser`. Decoupling
+creation from delivery also makes the flow testable end-to-end and
+forward-compatible with custom email branding (later directive).
+
+### D-004.4 `read_sensitive` audit on every platform read
+
+**Decision:** `listOrgs`, `getOrgDetail`, and `recentAuditRows` each
+write one `audit_log` row with `action='read_sensitive'` per
+Constitution VII. Aggregate counts (`platformCounts`) skip the audit
+because no per-row data is exposed.
+
+### D-004.5 Plan-tier resource limits recorded but not enforced
+
+**Decision:** `subscriptions.plan_tier` is recorded at provisioning time;
+enforcement (max users / leads / AI tokens) is deferred. User-count
+enforcement lands in D-005's invitation flow; LLM token caps in D-009.
+
+### D-004.6 5 fully-shipped + 5 placeholder routes
+
+**Decision:** Home, organizations list, organizations/new (real action),
+organizations/[id], audit ship FULLY. Subscriptions, analytics, costs,
+tickets, settings ship as placeholders pointing forward.
+
+### D-004.7 E2E specs deferred to a follow-up
+
+**Decision:** Playwright @smoke / @regression for the platform surface
+is deferred — the integration tests already prove the V1 DOD gate
+(provisioning end-to-end + zero operational leakage). UI-level e2e
+re-runs the same invariants through a slower channel; can land alongside
+D-005's onboarding wizard tests.
+
+---

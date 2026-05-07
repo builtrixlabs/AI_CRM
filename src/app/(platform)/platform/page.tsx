@@ -1,14 +1,72 @@
-// /platform — super_admin home (placeholder for D-001).
-// Full surfaces (orgs CRUD, subscriptions, analytics, audit) ship in D-004.
-export default function PlatformHomePage() {
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { platformCounts } from "@/lib/platform/queries";
+
+export const dynamic = "force-dynamic";
+
+export default async function PlatformHomePage() {
+  const counts = await platformCounts();
+
+  const kpis = [
+    { label: "Total organizations", value: counts.total_orgs },
+    { label: "Active", value: counts.active_orgs },
+    { label: "Org admins", value: counts.org_admins },
+  ];
+
   return (
-    <main className="mx-auto max-w-3xl p-12">
-      <div className="rounded-md bg-amber-50 border border-amber-200 p-4 text-amber-900">
-        You have <strong>zero</strong> access to operational data inside any
-        organization. This surface is for platform administration only.
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Platform</h1>
+        <p className="text-sm text-neutral-600">
+          Provisioning and platform administration. No operational data is
+          accessible from this surface.
+        </p>
+      </header>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {kpis.map((kpi) => (
+          <Card key={kpi.label}>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-neutral-500">
+                {kpi.label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-semibold tabular-nums">
+                {kpi.value}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
-      <h1 className="mt-8 text-3xl font-semibold">Platform</h1>
-      <p className="mt-4 text-neutral-600">Coming next directive — D-004 super_admin surfaces.</p>
-    </main>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Quick actions</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm space-y-2">
+          <p>
+            <a
+              href="/platform/organizations/new"
+              className="underline text-neutral-900"
+            >
+              Provision a new organization →
+            </a>
+          </p>
+          <p>
+            <a
+              href="/platform/organizations"
+              className="underline text-neutral-900"
+            >
+              View existing organizations →
+            </a>
+          </p>
+          <p>
+            <a href="/platform/audit" className="underline text-neutral-900">
+              View platform-wide audit log →
+            </a>
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
