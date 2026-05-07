@@ -100,18 +100,23 @@ test.beforeAll(async () => {
 });
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
-  await page.goto("/auth/sign-in");
-  await page.evaluate(
-    async ({ url, key, email, password }) => {
-      const { createClient } = await import(
-        "https://esm.sh/@supabase/supabase-js@2"
-      );
-      const c = createClient(url, key);
-      const { error } = await c.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    },
-    { url: SUPABASE_URL, key: ANON_KEY, email, password: PASS }
-  );
+  if (!admin) throw new Error("admin client missing");
+  const baseURL = page.url().startsWith("http")
+    ? new URL(page.url()).origin
+    : "http://localhost:3000";
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo: `${baseURL}/auth/callback` },
+  });
+  if (error) throw error;
+  const action = (data as { properties?: { action_link?: string } }).properties
+    ?.action_link;
+  if (!action) throw new Error("generateLink returned no action_link");
+  await page.goto(action);
+  await page.waitForURL(/\/(platform|admin|dashboard|403)$/, {
+    timeout: 20_000,
+  });
 }
 
 test.describe("@regression cross-tenant leak prevention", () => {

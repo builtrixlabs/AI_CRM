@@ -50,15 +50,43 @@ Format:
   `Set<Permission>`.
 - Anchor: `src/lib/auth/rbac.ts`, `tests/lib/auth/rbac.test.ts`.
 
-## append-only-via-rls-no-policy  (confidence: 1)
+## append-only-via-trigger  (confidence: 2)
 
 - First seen: D-001
-- Description: `audit_log` is append-only because it has an INSERT policy
-  for service_role only and *no* UPDATE or DELETE policy. With RLS
-  enabled, missing policies = forbidden. Even service_role can't UPDATE
-  or DELETE, on Supabase managed databases where service_role has
-  `bypassrls = false`.
-- Anchor: `supabase/migrations/20260507120300_audit_log.sql`.
+- Reinforced: D-001 (after empirical disproof of the RLS-only approach)
+- Description: To make a table truly append-only on Supabase, use a
+  `BEFORE UPDATE / DELETE / TRUNCATE` trigger that raises
+  `RAISE EXCEPTION 'append-only'`. RLS no-policy is NOT enough —
+  `service_role` has `bypassrls = true` by default and will succeed at
+  UPDATE / DELETE on a no-policy table. Triggers run regardless of RLS
+  bypass; this is the architecturally correct enforcement.
+- Supersedes: an earlier tentative `append-only-via-rls-no-policy` pattern
+  proven false against the live DB.
+- Anchor: `supabase/migrations/20260507120500_audit_log_triggers.sql`,
+  `tests/integration/audit-log-immutable.test.ts`.
+
+## supabase-helpers-in-public-app-prefix  (confidence: 1)
+
+- First seen: D-001
+- Description: JWT-claim helper functions and other custom SQL helpers
+  live in the `public` schema with an `app_` prefix (e.g.
+  `public.app_org_id()`, `public.app_is_super_admin()`). Supabase
+  managed databases reject `CREATE FUNCTION` in `auth.*` (SQLSTATE
+  42501); the `app_` prefix avoids collision with PostgREST or pg_*
+  introspection.
+- Anchor: `supabase/migrations/20260507120000_orgs_and_workspaces.sql`.
+
+## postgrest-notify-after-ddl  (confidence: 1)
+
+- First seen: D-001 (B9 channel-partner test fixture)
+- Description: When new tables / functions / policies land outside the
+  normal `supabase migration up` flow (e.g. test fixtures, ad-hoc DDL),
+  end the script with `NOTIFY pgrst, 'reload schema';` so PostgREST
+  refreshes its schema cache and the new objects become reachable via
+  the JS / REST client. Without it, calls return PGRST205
+  ("Could not find the table in the schema cache") even though the
+  object is present in pg_catalog.
+- Anchor: `tests/fixtures/cp-test-table.sql`.
 
 ## edge-middleware-as-routing-policy  (confidence: 1)
 

@@ -123,22 +123,32 @@ test.beforeAll(async () => {
 });
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
-  // Use Supabase password-based sign-in via JS in the page context so cookies
-  // get set by the SDK (mirrors what the magic-link callback does).
-  await page.goto("/auth/sign-in");
-  await page.evaluate(
-    async ({ url, key, email, password }) => {
-      const { createClient } = await import(
-        // The SDK is bundled into the app; using the published package URL keeps
-        // this test independent of internal module paths.
-        "https://esm.sh/@supabase/supabase-js@2"
-      );
-      const c = createClient(url, key);
-      const { error } = await c.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    },
-    { url: SUPABASE_URL, key: ANON_KEY, email, password: PASS }
-  );
+  // Use Supabase admin API to mint a magic-link, then have the browser visit
+  // it. The link redirects through our /auth/callback which exchanges the
+  // code via @supabase/ssr — that's the only path that sets the auth cookies
+  // our middleware can read. (Browser-side signInWithPassword uses
+  // localStorage and middleware can't see it.)
+  if (!admin) throw new Error("admin client missing");
+  const baseURL = page.url().startsWith("http")
+    ? new URL(page.url()).origin
+    : "http://localhost:3000";
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo: `${baseURL}/auth/callback` },
+  });
+  if (error) throw error;
+  const action = (data as { properties?: { action_link?: string } }).properties
+    ?.action_link;
+  if (!action) throw new Error("generateLink returned no action_link");
+  await page.goto(action);
+  // The action_link redirects to /auth/sign-in#access_token=… (implicit flow).
+  // Our sign-in page detects the hash, sets cookies via @supabase/ssr, then
+  // does window.location='/'. Middleware then routes to the user's landing.
+  // Wait for the final landing URL (not the intermediate sign-in step).
+  await page.waitForURL(/\/(platform|admin|dashboard|403)$/, {
+    timeout: 20_000,
+  });
 }
 
 test.describe("@smoke auth redirects", () => {

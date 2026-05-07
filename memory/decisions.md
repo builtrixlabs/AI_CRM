@@ -103,4 +103,57 @@ deprecation warning. Migration to `proxy.ts` is a follow-up directive
 **Rationale:** the warning doesn't block. Stability over chasing the
 latest Next convention before it stabilizes.
 
+### D-001.9 Helpers in `public.app_*`, not `auth.*`
+
+**Decision:** JWT-claim helpers (`org_id()`, `is_super_admin()`) live in
+`public.` schema, prefixed `app_` to distinguish from app-table accessors.
+
+**Alternatives considered:**
+- `auth.org_id()`. **Rejected at apply time** — Supabase managed databases
+  reject `CREATE FUNCTION` in the `auth` schema with `permission denied for
+  schema auth (SQLSTATE 42501)`. The `auth` schema is reserved for Supabase Auth itself.
+
+**Discovered:** During first `supabase db push` against the remote project.
+**Anchor:** [supabase/migrations/20260507120000_orgs_and_workspaces.sql](../supabase/migrations/20260507120000_orgs_and_workspaces.sql)
+
+### D-001.10 Audit-log immutability via trigger (RLS isn't enough)
+
+**Decision:** `audit_log` UPDATE / DELETE / TRUNCATE are blocked by a
+`BEFORE` trigger that raises `'audit_log is append-only'`. RLS no-policy
+is *not* sufficient.
+
+**Alternatives considered:**
+- RLS-no-policy (relied upon initially). **Rejected after empirical proof** —
+  Supabase configures `service_role` with `bypassrls = true` by default; UPDATE
+  and DELETE both succeeded against the no-policy table from a service-role
+  client. Triggers run regardless of RLS bypass; that's the only architecturally
+  sound enforcement.
+
+**Discovered:** B6 integration test failed (`expected undefined to be <id>`)
+when DELETE actually succeeded.
+**Anchor:** [supabase/migrations/20260507120500_audit_log_triggers.sql](../supabase/migrations/20260507120500_audit_log_triggers.sql)
+
+### D-001.11 PostgREST schema cache requires NOTIFY for DDL
+
+**Decision:** Test fixtures that create new tables (e.g. `cp_submissions`)
+must end with `NOTIFY pgrst, 'reload schema';` so PostgREST refreshes its
+schema cache and the table becomes queryable via the JS / REST client.
+
+**Discovered:** B9 first run failed with `Could not find the table
+'public.cp_submissions' in the schema cache (PGRST205)` despite the table
+being present in the catalog.
+**Anchor:** [tests/fixtures/cp-test-table.sql](../tests/fixtures/cp-test-table.sql)
+
+### D-001.12 super_admin AC-10 scoped to operational rows
+
+**Decision:** "super_admin sees zero operational data" excludes the
+super_admin's own platform-identity profile (organization_id NULL),
+which is correctly visible via `profiles_select_self`. AC-10a asserts
+`organization_id IS NOT NULL → 0 rows`, not the literal "0 rows total".
+
+**Rationale:** Constitution Principle II isolates *operational* data from
+super_admin. The super_admin still needs to know who they are at sign-in.
+A blanket `0 rows` would imply `getCurrentUser()` returns null for every
+super_admin, breaking the platform surface entirely.
+
 ---

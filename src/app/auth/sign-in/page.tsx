@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function SignInPage() {
@@ -9,6 +9,33 @@ export default function SignInPage() {
     "idle"
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Magic links (and Supabase admin generateLink) redirect with an implicit-
+  // flow hash fragment: /auth/sign-in#access_token=…&refresh_token=…
+  // Parse it and call setSession explicitly so @supabase/ssr writes the
+  // session to cookies. Then navigate to '/' so middleware routes the user.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.slice(1);
+    if (!hash.includes("access_token")) return;
+    const params = new URLSearchParams(hash);
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    if (!access_token || !refresh_token) return;
+
+    const client = createSupabaseBrowserClient();
+    client.auth
+      .setSession({ access_token, refresh_token })
+      .then(({ error }) => {
+        if (error) {
+          setStatus("error");
+          setErrorMsg(error.message);
+          return;
+        }
+        window.history.replaceState(null, "", window.location.pathname);
+        window.location.href = "/";
+      });
+  }, []);
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
