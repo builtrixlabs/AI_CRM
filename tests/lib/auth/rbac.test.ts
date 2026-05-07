@@ -137,4 +137,92 @@ describe("effectivePermissions — PLATFORM_ONLY guard (A4)", () => {
     });
     expect(perms.has("platform:manage")).toBe(true);
   });
+
+  it("every PLATFORM_ONLY permission is filtered for non-super_admin (A4 expansion)", () => {
+    for (const p of PLATFORM_ONLY_PERMISSIONS) {
+      const perms = effectivePermissions({
+        base_role: "org_admin",
+        bridge_app_roles: [],
+        org_allow_overrides: [p],
+        org_deny_overrides: [],
+      });
+      expect(perms.has(p)).toBe(false);
+    }
+  });
+});
+
+// 25-cell sampled matrix from spec.md / PRD §9.4.
+// "has" cells must be present in base; "lacks" cells must NOT be present.
+describe("PRD §9.4 role × permission matrix (sampled)", () => {
+  const matrix: Array<{
+    role: Parameters<typeof effectivePermissions>[0]["base_role"];
+    has: string[];
+    lacks: string[];
+  }> = [
+    {
+      role: "super_admin",
+      has: ["platform:manage", "organizations:create", "audit:view"],
+      lacks: ["leads:create", "deals:close_won"],
+    },
+    {
+      role: "org_owner",
+      has: ["organizations:edit", "billing:view", "audit:view"],
+      lacks: ["platform:manage", "leads:create"],
+    },
+    {
+      role: "org_admin",
+      has: ["dashboards:customize", "agents:provision", "directives:author"],
+      lacks: ["platform:manage", "leads:bulk_import"],
+    },
+    {
+      role: "workspace_admin",
+      has: ["leads:assign", "agents:approve_T2", "agents:approve_T3"],
+      lacks: ["platform:manage", "dashboards:customize"],
+    },
+    {
+      role: "manager",
+      has: ["leads:edit", "leads:assign"],
+      lacks: ["dashboards:customize", "agents:approve_T3"],
+    },
+    {
+      role: "sales_rep",
+      has: ["leads:view", "leads:create", "deals:view"],
+      lacks: ["agents:approve_T2", "leads:bulk_import"],
+    },
+    {
+      role: "read_only",
+      has: ["leads:view", "deals:view"],
+      lacks: ["leads:create", "leads:edit"],
+    },
+    {
+      role: "channel_partner",
+      has: ["cp:submit_lead"],
+      lacks: ["leads:view", "deals:view"],
+    },
+  ];
+
+  for (const cell of matrix) {
+    for (const perm of cell.has) {
+      it(`${cell.role} HAS ${perm}`, () => {
+        const perms = effectivePermissions({
+          base_role: cell.role,
+          bridge_app_roles: [],
+          org_allow_overrides: [],
+          org_deny_overrides: [],
+        });
+        expect(perms.has(perm)).toBe(true);
+      });
+    }
+    for (const perm of cell.lacks) {
+      it(`${cell.role} LACKS ${perm}`, () => {
+        const perms = effectivePermissions({
+          base_role: cell.role,
+          bridge_app_roles: [],
+          org_allow_overrides: [],
+          org_deny_overrides: [],
+        });
+        expect(perms.has(perm)).toBe(false);
+      });
+    }
+  }
 });

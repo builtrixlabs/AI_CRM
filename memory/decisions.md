@@ -240,3 +240,81 @@ TypeScript types in inngest@v3+.
 **Why:** Caught at `npm run build` — `Expected 2 arguments, but got 3`.
 
 ---
+
+## 2026-05-07 — D-003 RBAC Engine
+
+### D-003.1 `Permission` is a literal union; `rbac.ts` is the single source
+
+**Decision:** `PERMISSIONS` is a `as const` array in `src/lib/auth/rbac.ts`;
+`Permission = (typeof PERMISSIONS)[number]`. Adding a permission = TS
+literal change there only — no migration, no baseline doc update. The
+`Permission` type was removed from `src/lib/auth/types.ts` to enforce a
+single source (Constitution VIII).
+
+**Rationale:** PRD §9.3 explicitly states rbac.ts is authoritative.
+Mirroring the catalog in a baseline doc would create drift.
+
+### D-003.2 PLATFORM_ONLY is 8 perms, not 10 — `organizations:view` and `organizations:edit` are shared
+
+**Decision:** PLATFORM_ONLY_PERMISSIONS = 8 platform-tier perms (down from
+the literal-10 reading of PRD §4.2). `organizations:view` and
+`organizations:edit` are NOT platform-only — PRD §5.1 grants them to
+org_owner / org_admin for managing their own org metadata. Documented
+inline in rbac.ts.
+
+**Why:** The PRD §4.2 list and the PRD §5.1 list contradicted each other.
+Resolution above is the only one that lets org_admins edit their own
+org without holding a "platform-only" perm.
+
+### D-003.3 PLATFORM_ONLY duplicated in DB guard trigger; drift detector deferred
+
+**Decision:** The DB-side `role_permission_overrides_guard` trigger
+duplicates the 8-perm PLATFORM_ONLY list as a defense-in-depth measure
+on top of the resolver-time silent filter. A CI script that fails the
+build if the TypeScript constant and the DB list diverge lands in D-014
+hardening.
+
+**Why:** The resolver protects authenticated users. The DB trigger
+protects against bypass paths (service-role writes, future agents).
+Belt-and-suspenders.
+
+### D-003.4 `requirePermission` throws a typed `PermissionDenied`
+
+**Decision:** Helpers throw a `PermissionDenied` Error subclass carrying
+`{ user_id, perm, org_id }`. Server actions catch it at the framework
+boundary and return a typed 403 response. The error message includes the
+perm name; nothing else (no SQL, no row data) leaks to the client.
+
+**Rationale:** Throws integrate with Next.js error boundaries. Returning
+a Result type would require every gate site to write a discriminated-union
+match — too much boilerplate for the win.
+
+### D-003.5 Server-action helpers accept a pre-resolved `Set<Permission>`
+
+**Decision:** `hasPermission`, `requirePermission`, `requireAnyOf` accept
+an optional `cached?: Set<Permission>`. Server actions resolve the
+effective set once per request and pass it to every gate. No global
+cache, no Next.js `cache()` integration — explicit data flow only.
+
+**Rationale:** Makes resolution cost obvious at the call site; no surprise
+re-runs in tight loops.
+
+### D-003.6 `requireAnyOf` throws against the LAST perm in the list
+
+**Decision:** When none of the alternative permissions match,
+`requireAnyOf` throws `PermissionDenied` with the LAST perm in the
+input array (not the first). This makes the audit log capture the most
+specific / last-tried permission.
+
+**Why:** The first perm is often the broadest ("any of: leads:view, ...");
+the last is usually the narrowest. Logging the narrow case helps
+debugging more.
+
+### D-003.7 No catalog baseline; rbac.ts is the contract
+
+**Decision:** D-003 does NOT ratify a `baseline/111-rbac-catalog.md`.
+The PRD already names rbac.ts as authoritative (Constitution VIII).
+A baseline doc would duplicate the contents and drift. Future directives
+that depend on a permission existing should add a unit test asserting it.
+
+---

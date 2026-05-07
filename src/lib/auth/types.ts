@@ -1,6 +1,6 @@
 /**
- * Authoritative auth type definitions for D-001.
- * The full ~120-permission catalog lands in D-003; for now `Permission` is a string.
+ * Authoritative auth type definitions.
+ * `Permission` is a literal union exported from `./rbac` (D-003).
  */
 
 export const BASE_ROLES = [
@@ -28,8 +28,6 @@ export const GRANTABLE_APP_ROLES = [
 ] as const;
 
 export type AppRole = (typeof GRANTABLE_APP_ROLES)[number];
-
-export type Permission = string;
 
 export type AppRoleAssignment = {
   workspace_id: string | null;
