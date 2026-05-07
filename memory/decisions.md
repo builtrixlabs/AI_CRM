@@ -379,3 +379,62 @@ re-runs the same invariants through a slower channel; can land alongside
 D-005's onboarding wizard tests.
 
 ---
+
+## 2026-05-07 — D-005 Org Admin Cockpit + Onboarding Wizard
+
+### D-005.1 STEP_IDS as a literal-of-8
+
+**Decision:** `STEP_IDS` is an `as const` array of 8 step ids; every other
+type derives from it (`StepId`, `HARD_GATED_STEPS`, payload-schema record).
+Adding or reordering is a contract change reviewed in Plan Mode.
+
+### D-005.2 Hard-gate enforced at advanceStep, not just in the UI
+
+**Decision:** Calling `advanceStep` with `skipped: true` on a hard-gated
+step throws `OnboardingHardGateError`. The UI hides the "Skip" button on
+those steps too, but the throw is the load-bearing enforcement (in case
+a future automation calls advanceStep directly).
+
+### D-005.3 Sample demo writes no DB rows
+
+**Decision:** Step 8 is purely visual — a hardcoded fixture (Priya
+Sharma · 3 BHK · Bangalore) walked through 4 transitions. No `nodes`
+row is created. Fictional data shouldn't pollute the org's real graph.
+
+### D-005.4 `branding` column as jsonb (vs separate columns)
+
+**Decision:** Single `branding jsonb DEFAULT '{}'` instead of three
+columns (primary_color, accent_color, logo_url). Allows future
+expansion (typography, theme name, etc.) without DDL. Zod schema is
+the contract. Same pattern as `onboarding_state`.
+
+### D-005.5 Single dispatcher action over 8 separate actions
+
+**Decision:** One server action `onboardingAction(prev, formData)` that
+reads `step` from FormData and dispatches to `advanceStep`. The plan
+called for one action per step; consolidating saves ~150 lines of
+boilerplate without losing behavior. Per-step extraction is in a typed
+`extractPayload` helper.
+
+### D-005.6 Wizard step components inlined into one client component
+
+**Decision:** `wizard.tsx` switches on `currentStep` to render the matching
+step's form fields inline, instead of 8 separate client components per
+the plan. Saves files; each step's UI is small (1-2 fields up to a
+checkbox group); the action is the same. If a step grows to need state
+or components, splitting later is trivial.
+
+### D-005.7 Pipeline stages fixed at the default 7 in V0
+
+**Decision:** Step 5 (pipeline stages) shows the default 7-stage list
+read-only and asks the user to confirm. Customisation lands in D-007
+lead lifecycle. Documented inline.
+
+### D-005.8 Step 6 invites are best-effort
+
+**Decision:** When step 6 invites N teammates, partial failure (e.g. one
+of N email addresses rejected by Supabase) does NOT roll back the entire
+step. The successful invites stay; the step advances. Surface inline
+errors in a future iteration if observed friction.
+
+---
