@@ -438,3 +438,103 @@ step. The successful invites stay; the step advances. Surface inline
 errors in a future iteration if observed friction.
 
 ---
+
+## 2026-05-07 — D-006 Intelligent Canvas (Lead canvas only)
+
+### D-006.1 Framer Motion as the locked motion library
+
+**Decision:** `framer-motion@^12` is the motion library for every canvas-
+touching directive going forward. First motion lib in the repo; locked
+into baseline 112 §VI.
+
+**Alternatives considered:**
+- `motion-one`, `react-spring`. **Rejected** — Framer Motion is the
+  React 19-compatible incumbent, has the strongest reduced-motion story
+  (`MotionConfig reducedMotion="user"`), and pairs well with shadcn/ui.
+
+**Rationale:** Constitution VII says "Framer Motion (Canvas-grade UX)";
+this directive locks the version range and the usage patterns
+(MotionConfig at root, AnimatePresence for expanders, `motion.div` for
+section reveal). Future canvases reuse the same shapes.
+
+### D-006.2 Defense-in-depth client-side org filter on Realtime
+
+**Decision:** `useLeadActivityStream` drops Realtime messages whose payload
+`organization_id` ≠ the canvas's `currentOrgId` (and `workspace_id` if
+supplied) BEFORE merging into local state. RLS-via-Realtime is the
+load-bearing layer; the client filter is belt + suspenders per
+Constitution II.
+
+**Rationale:** even though Supabase Realtime respects RLS by default, a
+Realtime regression or RLS gap would silently leak. Cost of filtering
+client-side is one comparison per message — negligible. Cost of a tenant
+leak is existential.
+
+### D-006.3 404 (not 403) on cross-tenant lead access
+
+**Decision:** `/dashboard/leads/[id]` returns `notFound()` (404) for both
+"doesn't exist" and "exists in another tenant". `getLeadCanvas` returns
+`null` in both cases (RLS makes them indistinguishable upstream).
+
+**Alternatives considered:**
+- 403 for "exists but no permission". **Rejected** — leaks existence to
+  the caller. The 404/403 distinction itself reveals which lead IDs are
+  real, which is exactly the kind of inference attack RLS prevents.
+
+**Rationale:** preserve RLS's existence-hiding property end-to-end.
+
+### D-006.4 Operational canvas reads are NOT audited
+
+**Decision:** The Lead canvas does NOT write a `read_sensitive` audit row
+when it loads. Operational-tier reads by the workspace's own user are
+not audited.
+
+**Alternatives considered:**
+- Audit every canvas mount. **Rejected** — would 10x audit_log volume
+  in V0, swamp the platform audit surface, and obscure the actual
+  privileged reads we DO care about (super_admin platform reads, D-004.4).
+
+**Rationale:** Constitution VII reserves `read_sensitive` for platform-
+tier reads. D-004.4 set the precedent. D-006 follows it.
+
+### D-006.5 RSC boundary split — server-only api.ts vs client-safe channel.ts
+
+**Decision:** `src/lib/canvas/api.ts` is server-only (it transitively
+imports `next/headers`). The channel-name helper + edge-type / activity-
+limit constants live in `src/lib/canvas/channel.ts` so client components
+(`realtime.ts`) can import them without dragging server-only modules into
+the client bundle.
+
+**Discovered at:** `npm run build` — Turbopack bundled `realtime.ts` →
+`activity-stream.tsx` → `lead-canvas.tsx` → `api.ts` → `next/headers`
+into the client bundle and threw "Ecmascript file had an error". Split
+fixed the boundary.
+
+**Anchor:** [src/lib/canvas/channel.ts](../src/lib/canvas/channel.ts).
+
+### D-006.6 Demo route ships ahead of D-007
+
+**Decision:** `/dashboard/leads/demo` ships in D-006 with the Priya Sharma
+fixture. The route is removed in a future directive once D-007 ships
+create/edit and demos can use a real seeded lead.
+
+**Rationale:** without a fixture route, the canvas can't be exercised
+visually until D-007 lands the create flow. The demo route is one extra
+30-line page; it lets us run Playwright @smoke and human design QA on the
+canvas immediately.
+
+### D-006.7 UUID guard on lead_id before Supabase query
+
+**Decision:** `getLeadCanvas` validates `lead_id` against a v1-v8 UUID
+regex and returns null without touching the DB if it doesn't match. Sits
+in front of the existing PostgREST `.or()` filter that interpolates
+`lead_id` into a string template.
+
+**Rationale:** PostgREST already type-casts `id` (uuid) and 400s on
+malformed input, AND RLS scopes the query to the caller's tenant — so the
+interpolation isn't realistically exploitable. Adding the regex guard
+costs ~2µs per call and removes the surface entirely. Defense-in-depth.
+
+**Anchor:** [src/lib/canvas/api.ts](../src/lib/canvas/api.ts) `UUID_RE`.
+
+---

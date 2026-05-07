@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CanvasActivity } from "@/lib/canvas/types";
-import { leadCanvasChannel } from "@/lib/canvas/api";
+import { leadCanvasChannel } from "@/lib/canvas/channel";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SubscriptionLike = {

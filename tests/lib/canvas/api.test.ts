@@ -155,6 +155,14 @@ describe("getLeadCanvas", () => {
     expect(result!.activities[1]!.agent_tier).toBe("T1");
   });
 
+  it("returns null for a malformed lead_id (UUID guard)", async () => {
+    const { client } = buildClient({
+      leadResolve: { data: null, error: null },
+    });
+    expect(await getLeadCanvas("not-a-uuid", client as never)).toBeNull();
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it("returns null when the lead row doesn't exist (or RLS hides it)", async () => {
     const { client } = buildClient({
       leadResolve: { data: null, error: null },

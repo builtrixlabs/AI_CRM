@@ -2,24 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { leadSchema } from "@/lib/nodes/schemas/lead";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AgentTier, CanvasActivity, CanvasData, CanvasLead } from "./types";
+import {
+  ACTIVITY_EDGE_TYPES,
+  DEFAULT_ACTIVITY_LIMIT,
+  leadCanvasChannel,
+} from "./channel";
 
-/** Default activity-row fetch limit; baseline 112 documents this. */
-export const DEFAULT_ACTIVITY_LIMIT = 50;
+export {
+  ACTIVITY_EDGE_TYPES,
+  DEFAULT_ACTIVITY_LIMIT,
+  leadCanvasChannel,
+};
 
-/** Edge types that connect an activity to its lead/deal. */
-export const ACTIVITY_EDGE_TYPES = [
-  "mentioned_in",
-  "related_to",
-  "belongs_to",
-] as const;
-
-/**
- * Format a Supabase Realtime channel name for a lead's canvas.
- * Locked into baseline 112: `canvas:lead:<lead_id>`.
- */
-export function leadCanvasChannel(lead_id: string): string {
-  return `canvas:lead:${lead_id}`;
-}
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 const TIER_VALUES: ReadonlySet<string> = new Set([
   "T0",
@@ -87,6 +82,7 @@ export async function getLeadCanvas(
   lead_id: string,
   client?: SupabaseClient
 ): Promise<CanvasData | null> {
+  if (!UUID_RE.test(lead_id)) return null;
   const supabase = client ?? (await createSupabaseServerClient());
 
   const leadResult = await supabase
