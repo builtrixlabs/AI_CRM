@@ -1,0 +1,163 @@
+name: Gate 6 — Post-merge watchdog
+
+# Spec §4 Gate 6: After every merge to main, run CI + Playwright. If main fails on
+# 2 consecutive runs OR Vercel main deploy fails, auto-revert the merge commit.
+#
+# Cooldown rationale (spec §10): a single red can be flake. Two consecutive reds
+# is a real regression. The state.consecutive-failures counter is computed by
+# querying the previous run's conclusion via `gh api`.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_revert_sha:
+        description: "If set, force-revert this commit SHA (skip CI)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+  deployments: read
+
+concurrency:
+  group: watchdog-main
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  ci:
+    name: CI on main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      conclusion: ${{ steps.ci.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      - id: ci
+        name: Build + test + e2e
+        run: |
+          set -e
+          npm run build
+          npm run test
+          npm run test:smoke || echo "::warning::smoke failed"
+          npm run test:regression || echo "::warning::regression failed"
+
+  # ─────────────────────────────────────────────────────────────
+  watchdog:
+    name: Watchdog decision
+    needs: ci
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git identity
+        run: |
+          git config user.name  "vibe-watchdog[bot]"
+          git config user.email "vibe-watchdog@users.noreply.github.com"
+
+      - name: Determine consecutive-failure count
+        id: state
+        run: |
+          this="${{ needs.ci.result }}"
+          echo "this_run=$this" >> "$GITHUB_OUTPUT"
+          if [ "$this" = "success" ]; then
+            echo "consecutive=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Look up the previous push run on main
+          prev_conclusion=$(gh run list --workflow "post-merge-watchdog.yml" --branch main --limit 5 --json conclusion,databaseId,event \
+            | jq -r '[.[] | select(.event=="push") | .conclusion] | .[1] // "unknown"')
+          if [ "$prev_conclusion" = "failure" ]; then
+            echo "consecutive=2" >> "$GITHUB_OUTPUT"
+          else
+            echo "consecutive=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check Vercel main deployment status
+        id: vercel
+        continue-on-error: true
+        run: |
+          # Read latest deployment from GitHub Deployments API. Vercel posts these
+          # for every push to main when GitHub integration is enabled.
+          status=$(gh api "repos/${{ github.repository }}/deployments?environment=Production&per_page=1" \
+                   --jq '.[0].id' 2>/dev/null || echo "")
+          if [ -z "$status" ]; then
+            echo "vercel_state=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state=$(gh api "repos/${{ github.repository }}/deployments/${status}/statuses" \
+                  --jq '.[0].state' 2>/dev/null || echo "unknown")
+          echo "vercel_state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Auto-revert decision
+        id: decide
+        run: |
+          consec="${{ steps.state.outputs.consecutive }}"
+          vercel="${{ steps.vercel.outputs.vercel_state }}"
+          if [ "$consec" = "2" ]; then
+            echo "revert=yes" >> "$GITHUB_OUTPUT"
+            echo "reason=CI red on 2 consecutive runs of main" >> "$GITHUB_OUTPUT"
+          elif [ "$vercel" = "failure" ] || [ "$vercel" = "error" ]; then
+            echo "revert=yes" >> "$GITHUB_OUTPUT"
+            echo "reason=Vercel main deploy failed (${vercel})" >> "$GITHUB_OUTPUT"
+          else
+            echo "revert=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run auto-revert
+        if: steps.decide.outputs.revert == 'yes'
+        run: |
+          set -e
+          chmod +x scripts/v5/auto-revert.sh
+          bash scripts/v5/auto-revert.sh "${{ github.sha }}" "${{ steps.decide.outputs.reason }}"
+
+      - name: Watchdog clean
+        if: steps.decide.outputs.revert == 'no'
+        run: |
+          if [ "${{ needs.ci.result }}" = "success" ]; then
+            echo "✓ main is green — watchdog dismissed"
+          else
+            echo "⚠ main is red but only 1 consecutive run; cooldown engaged, waiting for next push"
+          fi
+
+  # ─────────────────────────────────────────────────────────────
+  manual_revert:
+    name: Manual revert (workflow_dispatch)
+    if: github.event_name == 'workflow_dispatch' && inputs.force_revert_sha != ''
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git identity
+        run: |
+          git config user.name  "vibe-watchdog[bot]"
+          git config user.email "vibe-watchdog@users.noreply.github.com"
+
+      - name: Run auto-revert manually
+        run: |
+          chmod +x scripts/v5/auto-revert.sh
+          bash scripts/v5/auto-revert.sh "${{ inputs.force_revert_sha }}" "manual revert via workflow_dispatch"

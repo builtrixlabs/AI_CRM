@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "name": "vibe-os",
+  "version": "5.0.0-rc.0",
+  "description": "Vibe Coding OS V5 — native + minimal. Bash-first orchestration, Plan Mode review, auto-revert watchdog. Internal-only Builtrix product line OS.",
+  "author": "Builtrix Labs",
+  "license": "UNLICENSED",
+  "minimum_claude_code_version": "1.0.0",
+  "minimum_node_version": "18.0.0",
+
+  "skills": [
+    "supabase-rls-policy",
+    "shadcn-component-install",
+    "vitest-from-spec",
+    "secret-fix-and-relocate",
+    "directive-from-prompt",
+    "migration-supabase-safe"
+  ],
+
+  "agents": [
+    "feature-builder",
+    "security-scanner",
+    "pattern-extractor"
+  ],
+
+  "hooks": [
+    "PreToolUse",
+    "PostToolUse",
+    "SessionStart",
+    "Stop",
+    "SubagentStop"
+  ],
+
+  "commands": [
+    "build"
+  ],
+
+  "mcps": [
+    "vibe-supabase",
+    "vibe-vercel",
+    "vibe-secret-scanner",
+    "supabase-cloud"
+  ],
+
+  "policies": [
+    "001-structural-integrity",
+    "002-execution-gating",
+    "003-prompt-discipline",
+    "004-memory-persistence",
+    "009-security-scanning",
+    "012-tdd-enforcement",
+    "013-pre-commit-hooks"
+  ],
+
+  "baselines": [
+    "001-repo-template",
+    "008-tdd-contract",
+    "009-pre-commit-contract",
+    "011-hook-contract",
+    "012-subagent-contract"
+  ],
+
+  "runbooks": [
+    "gate-3-failure",
+    "gate-4-failure",
+    "hook-false-positive"
+  ],
+
+  "bin": {
+    "init": "./bin/init.mjs"
+  },
+
+  "homepage": "https://github.com/RaghavaSreeram/VIBE_CODE_OS"
+}

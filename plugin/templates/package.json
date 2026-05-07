@@ -1,0 +1,63 @@
+{
+  "name": "my-vibe-app",
+  "version": "0.1.0",
+  "description": "App scaffolded with Vibe Coding OS V5",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:playwright": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:regression": "playwright test --grep @regression",
+    "test:hooks": "node --test tests/hooks/*.test.mjs",
+    "test:skills": "node --test tests/skills/*.test.mjs",
+    "test:agents": "node --test tests/agents/*.test.mjs",
+    "test:plugin": "node --test tests/plugin/*.test.mjs",
+    "test:security": "npx ts-node --esm scripts/secret-scanner.ts",
+    "prepare": "node -e \"if(process.env.CI!=='true'&&!process.env.VERCEL)require('husky')()\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.93.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.563.0",
+    "next": "^16.1.5",
+    "next-themes": "^0.4.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "autoprefixer": "^10.4.23",
+    "husky": "^9.1.7",
+    "jsdom": "^27.4.0",
+    "postcss": "^8.5.6",
+    "shadcn": "^3.7.0",
+    "supabase": "^2.74.4",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.3.0",
+    "vercel": "^50.5.2",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

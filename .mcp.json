@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "supabase-cloud": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp"
+    },
+    "vibe-supabase": {
+      "command": "node",
+      "args": ["scripts/mcp/supabase/server.mjs"]
+    },
+    "vibe-vercel": {
+      "command": "node",
+      "args": ["scripts/mcp/vercel/server.mjs"]
+    },
+    "vibe-secret-scanner": {
+      "command": "node",
+      "args": ["scripts/mcp/secret-scanner/server.mjs"]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "_comment": "Vibe OS V5 — paths immutable to Write/Edit/MultiEdit. Self-contained registry; V4 baseline/locked-files.md retired with the Structure Guardian MCP.",
+  "_authority": "POLICY 001 — Structural Integrity",
+  "block_writes": [
+    "policy/**",
+    "baseline/**",
+    ".git/**",
+    "node_modules/**",
+    ".env",
+    ".env.local",
+    ".env.development.local",
+    ".env.test.local",
+    ".env.production.local",
+    ".env.production"
+  ],
+  "_allowed_env_files": [".env.example"],
+  "append_only": [
+    "memory/logs/**"
+  ],
+  "_dangerous_bash_substrings": [
+    "rm -rf /",
+    "rm -rf ~",
+    "rm -rf .",
+    "rm -rf ..",
+    "rm -rf .git",
+    "rm -rf node_modules",
+    "git push --force",
+    "git push -f"
+  ]
+}

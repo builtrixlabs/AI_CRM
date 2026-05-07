@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+# Pre-Commit Secret Detection Hook
+# Policy: POLICY 013 — Pre-Commit Secret Detection
+# Scans staged files for hardcoded secrets before allowing commit.
+
+npx ts-node --esm scripts/secret-scanner.ts
