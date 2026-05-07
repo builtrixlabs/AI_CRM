@@ -176,6 +176,40 @@ Format:
 - Anchor: `src/lib/auth/permissions.ts` (hasPermission /
   requirePermission / requireAnyOf accept `cached?: Set<Permission>`).
 
+## provisioning-with-manual-rollback  (confidence: 1)
+
+- First seen: D-004
+- Description: Multi-step provisioning operations against Supabase (no
+  client-side transactions) ship as: collect intermediate IDs in
+  variables, run inserts in order in a try block, in the catch run
+  compensating deletes in REVERSE order, then re-throw the original
+  error. Best-effort cleanup — swallow rollback errors so the original
+  failure surfaces. Tests must cover every failure point (after step 1,
+  after step 3, etc.) and assert the DB returns to the empty pre-state.
+- Anchor: `src/lib/platform/provision.ts`
+  + `tests/lib/platform/provision.test.ts`.
+
+## read-sensitive-audit-on-platform-reads  (confidence: 1)
+
+- First seen: D-004
+- Description: Service-role reads of operational metadata from
+  super_admin surfaces write one `audit_log` row with
+  `action='read_sensitive'` and `diff: { kind: '<surface>' }`. Pure
+  aggregate counts (no per-row exposure) skip the audit. Constitution
+  VII contract — every privileged read is observable.
+- Anchor: `src/lib/platform/queries.ts` (listOrgs / getOrgDetail /
+  recentAuditRows write the audit row; platformCounts does not).
+
+## stacked-sections-not-tabs  (confidence: 1)
+
+- First seen: D-004
+- Description: For surfaces that PRD/spec describes as "tabs", use
+  stacked Card sections instead. Constitution IX bans tabs in operational
+  surfaces; the platform surface follows the same pattern for consistency.
+  No client-state sync needed (SSR-friendly), and the page is more
+  printer-friendly / search-engine-friendly without tabs hiding content.
+- Anchor: `src/app/(platform)/platform/organizations/[id]/page.tsx`.
+
 ## edge-middleware-as-routing-policy  (confidence: 1)
 
 - First seen: D-001
