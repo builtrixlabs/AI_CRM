@@ -22,6 +22,9 @@ build/
 out/
 *.tsbuildinfo
 
+# Coverage
+coverage/
+
 # Python
 __pycache__/
 *.py[cod]
