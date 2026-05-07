@@ -22,8 +22,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { LEAD_SOURCES } from "@/lib/nodes/schemas/lead";
 import { createLeadAction } from "@/app/(dashboard)/dashboard/_actions/leads";
 
-export function NewLeadDialog() {
-  const [open, setOpen] = useState(false);
+export type NewLeadDialogProps = {
+  /** Optional controlled-mode open state. If omitted, the component manages its own state and renders its own trigger button. */
+  open?: boolean;
+  /** Called when the dialog requests open/close in controlled mode. */
+  onOpenChange?: (open: boolean) => void;
+  /** When true, suppress the inline trigger button (parent provides one). */
+  hideTrigger?: boolean;
+};
+
+export function NewLeadDialog(props: NewLeadDialogProps = {}) {
+  const isControlled = props.open !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? (props.open as boolean) : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (isControlled) {
+      props.onOpenChange?.(v);
+    } else {
+      setInternalOpen(v);
+    }
+  };
   const [phone, setPhone] = useState("");
   const [source, setSource] = useState("");
   const [email, setEmail] = useState("");
@@ -71,13 +89,15 @@ export function NewLeadDialog() {
 
   return (
     <>
-      <Button
-        type="button"
-        data-testid="new-lead-trigger"
-        onClick={() => setOpen(true)}
-      >
-        + New lead
-      </Button>
+      {props.hideTrigger ? null : (
+        <Button
+          type="button"
+          data-testid="new-lead-trigger"
+          onClick={() => setOpen(true)}
+        >
+          + New lead
+        </Button>
+      )}
       <Dialog
         open={open}
         onOpenChange={(o) => {
