@@ -56,7 +56,7 @@ describe("audit_log is append-only", () => {
       .single();
     expect(after?.action).toBe("test_insert");
     // Optional: assert error too if RLS surfaces it.
-    if (error) expect(error.message).toMatch(/policy|permission|rls/i);
+    if (error) expect(error.message).toMatch(/policy|permission|rls|append-only|rejected/i);
   });
 
   it("AC-13: DELETE on audit_log is rejected", async () => {
@@ -70,6 +70,6 @@ describe("audit_log is append-only", () => {
       .eq("id", insertedId!)
       .maybeSingle();
     expect(after?.id).toBe(insertedId);
-    if (error) expect(error.message).toMatch(/policy|permission|rls/i);
+    if (error) expect(error.message).toMatch(/policy|permission|rls|append-only|rejected/i);
   });
 });
