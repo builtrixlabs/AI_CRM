@@ -259,4 +259,86 @@ describe("enrichLead — guard rails", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe("validation");
   });
+
+  it("missing client dependency → validation error", async () => {
+    const gw = gatewayWithCompletion("{}");
+    const r = await enrichLeadHandler(baseInv, {
+      gateway: gw as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe("validation");
+  });
+
+  it("coerces non-string label/source/state defensively", async () => {
+    // DB enforces these as strings; the agent guards against future
+    // schema drift. Exercises the else-branches.
+    const t = makeClient({
+      lead_row: {
+        ...baseLeadRow,
+        label: null as unknown as string,
+        state: 42 as unknown as string,
+        data: { source: 123, notes: { wrong: "shape" } },
+      },
+    });
+    const gw = gatewayWithCompletion(
+      JSON.stringify({ score: 30, rationale: "unknown source." }),
+    );
+    const r = await enrichLeadHandler(baseInv, {
+      gateway: gw as never,
+      client: t.client as never,
+    });
+    expect(r.ok).toBe(true);
+    expect(mocks.updateNodeData).toHaveBeenCalledOnce();
+  });
+
+  it("DB read error → unknown error path", async () => {
+    const errChain = {
+      select: vi.fn(() => errChain),
+      eq: vi.fn(() => errChain),
+      is: vi.fn(() => errChain),
+      maybeSingle: vi.fn(() =>
+        Promise.resolve({ data: null, error: { message: "boom" } }),
+      ),
+    };
+    const errorClient = { from: vi.fn(() => errChain) };
+    const gw = gatewayWithCompletion("{}");
+    const r = await enrichLeadHandler(baseInv, {
+      gateway: gw as never,
+      client: errorClient as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("unknown");
+      expect(r.message).toContain("lead lookup failed");
+    }
+  });
+});
+
+describe("enrichLead convenience export", () => {
+  it("dispatches via runAgent (action=enrich_lead, tier=T1 default)", async () => {
+    const { enrichLead } = await import("@/lib/agents/lead-enrichment");
+    // Agent lookup returns null → runAgent returns a 'not registered'
+    // validation error. Confirms the convenience helper routes through
+    // runAgent.
+    const agentLookupChain = {
+      select: vi.fn(() => agentLookupChain),
+      eq: vi.fn(() => agentLookupChain),
+      maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+    };
+    const client = { from: vi.fn(() => agentLookupChain) };
+    const r = await enrichLead(
+      {
+        agent_id: AGENT_ID,
+        lead_id: LEAD,
+        organization_id: ORG,
+        workspace_id: WS,
+      },
+      { client: client as never },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("validation");
+      expect(r.message).toContain("not registered");
+    }
+  });
 });

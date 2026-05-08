@@ -124,6 +124,16 @@ describe("textOfRecord — other types", () => {
     expect(out).not.toContain("rep@example.com");
   });
 
+  it("includes boolean values in the embedding source", () => {
+    const out = textOfRecord({
+      node_type: "document",
+      label: "Agreement.pdf",
+      data: { doc_type: "agreement", verified: true },
+    });
+    expect(out).toContain("doc_type: agreement");
+    expect(out).toContain("verified: true");
+  });
+
   it("note has no allowlisted keys (label only)", () => {
     const out = textOfRecord({
       node_type: "note",
