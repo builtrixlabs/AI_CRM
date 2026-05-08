@@ -648,3 +648,43 @@ Format:
 - Anchor: `src/lib/leads/api.ts` (`createLead` emits),
   `src/lib/inngest/functions/lead-enrichment.ts` (consumes),
   `src/lib/agents/lead-enrichment.ts` (idempotent pre-check).
+
+## webhook-dedup-via-jsonb-key  (confidence: 1)
+
+- First seen: D-010 (`upsertActivityFromWhatsApp`)
+- Description: External provider message ids that aren't UUIDs
+  (e.g. `wamid.HBgMOTE5...`) live in `nodes.data.custom.<key>` and
+  are dedup'd via a SELECT-first lookup before INSERT. The
+  filter is `eq("data->custom->>key", message_id)`. This avoids
+  adding a partial unique index to the polymorphic `nodes` table
+  but accepts a small race window — acceptable for V0 with single-
+  provider, retry-only concurrency. Promote to partial unique
+  index in D-014 hardening if pilot uncovers duplicates.
+- Anchor: `src/lib/webhooks/whatsapp/ingest.ts`
+  `findExistingActivityForMessage`,
+  `tests/lib/webhooks/whatsapp/ingest.test.ts` (dedup case).
+
+## hmac-flat-timing-verification  (confidence: 1)
+
+- First seen: D-010 (`verifyWhatsAppSignature`)
+- Description: Webhook signature verification always computes the
+  HMAC even on malformed headers, then runs `crypto.timingSafeEqual`
+  only after a length check. The compute is dominant work; padding
+  it makes total time independent of input quality. Headers may be
+  prefixed (`sha256=<hex>`, `hmac=<hex>`) — strip on first `=`.
+- Anchor: `src/lib/webhooks/whatsapp/signature.ts`,
+  `tests/lib/webhooks/whatsapp/signature.test.ts`.
+
+## system-actor-row-via-system-uuid  (confidence: 2)
+
+- First seen: D-001 (audit_log boots), reinforced D-010
+- Description: Inserts attributed to "the system" (no human, no
+  agent) carry `created_by = '00000000-0000-0000-0000-000000000000'`
+  + `created_via = 'system'` (or a more specific via like
+  `'whatsapp'` when the system was responding to an external event).
+  audit_log writes `actor_type='system'` and a descriptive
+  `actor_role` (e.g. `'whatsapp_webhook'`). The all-zeros uuid is
+  reserved by D-001's bootstrap script for this purpose.
+- Anchor: `supabase/migrations/20260508130300_workspace_inbox_helper.sql`
+  (`v_system_uuid`),
+  `src/lib/webhooks/whatsapp/ingest.ts` (`SYSTEM_UUID`).

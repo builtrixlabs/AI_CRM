@@ -863,3 +863,80 @@ provisioning (D-004 amendment). Rejected to avoid amending D-004's
 provisioning flow.
 
 ---
+
+## 2026-05-08 — D-010 WhatsApp inbound webhook + Activity Stream wiring
+
+### D-010.1 Idempotency key lives in `nodes.data.custom.wa_message_id`
+
+**Decision:** Per-org dedup is enforced by SELECT-then-INSERT on
+the `data->custom->>wa_message_id` JSONB key. We did NOT add a
+unique constraint to `nodes` because:
+- `nodes` is the polymorphic graph table; constraints have to apply
+  to one `node_type` only, requiring a partial unique index — fine,
+  but it would be the first such index and adds a maintenance
+  burden.
+- The provider `wa_message_id` is text, NOT a uuid, so we can't
+  reuse `source_event_id` (uuid) without a coercion table.
+
+**Alternatives considered:**
+- Partial unique index `(organization_id, node_type, (data->custom->>wa_message_id)) WHERE node_type='activity'`. **Rejected for V0** — adds DDL surface; the SELECT-first dedup is correct under the only concurrency the V0 webhook sees (one provider, one retry). D-014 hardening can promote to a unique partial index after pilot.
+- A side `whatsapp_message_dedup` table. **Rejected** — extra table for one column.
+
+### D-010.2 Orphan activities attach to a per-workspace inbox lead
+
+**Decision:** When an inbound message has no matching lead, the
+activity attaches to a system-owned inbox lead created lazily by
+SQL function `ensure_workspace_inbox_lead(workspace_id)`. Inbox
+leads carry `data.custom.is_system_inbox = true` for lookup. They
+use `state='new'` and `data.source='other'` — both Zod-valid — so
+the canvas renders them with no special-casing.
+
+**Alternatives considered:**
+- Reject orphan activities. **Rejected** — losing inbound messages
+  is the failure mode the product was designed to fix.
+- A fully separate `inbox_messages` table. **Rejected** — would
+  need its own RLS, audit, realtime, edges. Inbox leads ride the
+  graph.
+
+### D-010.3 HMAC-SHA256 verification + flat timing
+
+**Decision:** `verifyWhatsAppSignature` always computes the HMAC
+even when the header is malformed; `crypto.timingSafeEqual` only
+runs after a length check. Padding the compute path keeps total
+verification time independent of input quality.
+
+### D-010.4 Per-org webhook secret stored as SHA-256 hash
+
+**Decision:** `org_whatsapp_endpoints.secret_sha256` stores a hash
+of the shared secret. V0 uses a platform-wide secret in
+`WHATSAPP_WEBHOOK_SECRET` env (matches D-009's
+`process.env.ANTHROPIC_API_KEY` pattern). D-016 will activate
+per-org secrets stored as SHA-256 hashes.
+
+**Why hash, not encryption:** the verify path can reconstruct the
+HMAC from the raw secret + body, but the route never needs to
+*read* the raw secret back; we just need to confirm a digest.
+Hash-only storage means a DB leak doesn't leak signing keys.
+
+### D-010.5 No outbound emit on whatsapp_inbound
+
+**Decision:** D-010 does NOT emit a `whatsapp.received` Inngest
+event. The realtime publication on `nodes` already broadcasts the
+INSERT; downstream consumers (Lead Enrichment Agent, future
+Stale-lead Watcher) hook off of that. Avoids duplicate event
+fan-out.
+
+**Trade-off:** background jobs that need to act on every inbound
+must subscribe to Postgres CHANGES, not Inngest. Acceptable for V0;
+reassess at D-011 (DOE engine) if directives need a stable event.
+
+### D-010.6 Append-only ledger row even on rejection
+
+**Decision:** `whatsapp_inbound_log` records every webhook POST,
+including signature failures (`status='rejected'`, the route logs
+on rejection so failed/successful traces are uniformly replayable).
+Audit log only fires on successful insert (deduped doesn't audit;
+rejected doesn't either — the ledger is the audit equivalent for
+the reject path).
+
+---

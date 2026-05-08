@@ -34,6 +34,10 @@ export default defineConfig({
         "src/lib/ai/types.ts",
         "src/lib/agents/**",
         "src/lib/nodes/text.ts",
+        "src/lib/webhooks/**",
+        "src/lib/doe/**",
+        "src/lib/sitevisits/**",
+        "src/lib/calls/**",
         "src/app/(dashboard)/dashboard/_actions/**",
       ],
       exclude: [
