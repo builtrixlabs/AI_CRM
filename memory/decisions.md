@@ -1205,3 +1205,47 @@ authority order, `memory/decisions.md` remains the
 "why" record and `docs/architecture.md` is the "what & where".
 
 ---
+
+## 2026-05-08 — D-015 Pilot onboarding (V0 acceptance gate)
+
+### D-015.1 Pilot is a runbook + smoke test, not new code
+
+**Decision:** D-015 ships zero source code. The deliverables are
+two runbooks (`docs/runbooks/pilot-onboarding.md` +
+`docs/runbooks/pilot-smoke-test.md`) and an idempotent demo seed
+script (`scripts/seed-pilot-org.sh`). Per the install plan:
+"D-015 is mostly operational, not code — it's the V0 acceptance
+gate."
+
+**Why this matters:** the temptation during pilot is to add
+features in response to feedback. The pre-pilot rule, captured
+here in writing: **no V0 feature additions during the pilot.**
+Bug fixes only. Feature requests file to a V1 backlog.
+
+### D-015.2 Smoke test is 14 numbered checks, all must pass
+
+**Decision:** The smoke test names 14 explicit checks across 10
+groups (tenant isolation, lifecycle, canvas activity, Cmd+K,
+agents, sweeps, DOE, audit immutability, budget, event bus).
+**All 14 must pass** before the pilot is declared live. Single
+failure → stop, file pilot-blocker, hotfix branch off v1.
+
+**Why all-or-nothing:** at pilot stage, partial coverage is
+worse than no coverage. The smoke test is calibrated such that
+each check probes a constitutional principle; passing 13 of 14
+with audit-log immutability failing means the system is
+non-compliant.
+
+### D-015.3 Demo-org seed script does NOT create auth.users
+
+**Decision:** `scripts/seed-pilot-org.sh` creates rows in
+`organizations`, `workspaces`, `teams`, `profiles`, and
+`user_app_roles`, but it **skips** rows whose corresponding
+`auth.users` rows don't exist. The operator magic-links users
+via Supabase Auth, then re-runs the script (idempotent).
+
+**Why:** creating auth users via SQL bypasses Supabase Auth's
+email verification + bcrypt + audit. Cardinal sin per
+Constitution VII (stack discipline + Supabase Auth).
+
+---
