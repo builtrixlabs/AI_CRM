@@ -1081,3 +1081,64 @@ The canvas's edge query for the lead picks up the visit on the
 "site visits" section without a separate lookup.
 
 ---
+
+## 2026-05-08 — D-013 Call Audit event bus integration
+
+### D-013.1 Single inbox endpoint, dispatched by `event_kind`
+
+**Decision:** One endpoint `/api/events/inbox` accepts every
+sister-product event. The dispatcher discriminates by
+`event_kind`. Per-product, per-kind handlers live in
+`src/lib/events/<product>/<kind>.ts`. Adding a new kind = add a
+handler + a switch arm.
+
+**Alternatives considered:**
+- One endpoint per product (`/api/events/call-audit/inbox`,
+  `/api/events/legal/inbox`). **Rejected** — operationally
+  identical, more route boilerplate, more secrets to manage.
+
+### D-013.2 Idempotency via `data.custom.source_event_id` JSONB key
+
+**Decision:** Reuses D-010's pattern (webhook-dedup-via-jsonb-key).
+Inbox dedup looks up an existing `nodes` row whose
+`data.custom.source_event_id = $event_id` AND
+`organization_id = $envelope.org`. Cross-tenant `event_id`
+collisions return null because of the org filter — events from
+different orgs with the same id (unlikely but possible) don't
+collide.
+
+### D-013.3 Lead-not-found in tenant returns rejection, not orphan
+
+**Decision:** Unlike D-010's WhatsApp orphan-to-inbox-lead
+fallback, the call-audit handler rejects when the lead isn't
+found in the org. A call without an associated lead is a sister-
+product bug; orphan would obscure it.
+
+### D-013.4 Objection-detected dispatches DOE inline (not via Inngest)
+
+**Decision:** `onCallObjectionDetected` calls `dispatchDirective`
+directly within the request lifecycle. Latency: synchronous DOE
+runs (< 100ms in-memory matching) are fine for the webhook's
+return budget. Async dispatch via Inngest would add a hop +
+serialization without buying anything.
+
+**Trade-off:** if D-09's action handler is slow (e.g. it calls
+`gateway.complete`), the webhook's response time grows. T0
+`surface_on_canvas` action is non-AI, so this is bounded for V0.
+
+### D-013.5 Edge type `mentioned_in` for call → lead
+
+**Decision:** Calls link to leads via `mentioned_in` (not
+`attended` — that's reserved for site visits per D-012.5).
+Constitution naming taxonomy in baseline 110 is binding.
+
+### D-013.6 Same HMAC verifier as D-010
+
+**Decision:** D-013's route imports
+`verifyWhatsAppSignature` from D-010 — the underlying HMAC-SHA256
+verification is identical. Once D-010's helper is rename-worthy
+(D-014 or later), the export becomes a generic
+`verifySignature`. For V0 the function name is misleading but
+the implementation is correct + tested.
+
+---

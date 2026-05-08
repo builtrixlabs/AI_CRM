@@ -758,3 +758,19 @@ Format:
   tier that involves `gateway.complete` for personalization.
 - Anchor: `src/lib/agents/site-visit-reminder.ts`
   (`templateBody` function).
+
+## cross-product-event-envelope  (confidence: 1)
+
+- First seen: D-013 (`/api/events/inbox`)
+- Description: All sister-product → CRM events use a single
+  envelope: `{event_id, organization_id, event_kind,
+  source_product, ts, payload}`. One endpoint dispatches by
+  `event_kind`. Per-event handlers live under
+  `src/lib/events/<product>/<kind>.ts`. Idempotency is by
+  `event_id` per org via `nodes.data.custom.source_event_id`.
+  Tenant gate: every handler must verify the event's
+  `organization_id` claim against the affected lead/deal/document
+  before any insert.
+- Anchor: `src/lib/events/types.ts` (envelopeSchema),
+  `src/lib/events/inbox.ts` (`dispatchInboxEvent`),
+  `src/app/api/events/inbox/route.ts`.

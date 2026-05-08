@@ -37,7 +37,7 @@ export default defineConfig({
         "src/lib/webhooks/**",
         "src/lib/doe/**",
         "src/lib/sitevisits/**",
-        "src/lib/calls/**",
+        "src/lib/events/**",
         "src/app/(dashboard)/dashboard/_actions/**",
       ],
       exclude: [
