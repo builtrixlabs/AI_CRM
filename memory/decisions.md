@@ -1142,3 +1142,66 @@ verification is identical. Once D-010's helper is rename-worthy
 the implementation is correct + tested.
 
 ---
+
+## 2026-05-08 — D-014 V0 hardening pass
+
+### D-014.1 Pre-existing canvas/api test mock fixed
+
+**Decision:** D-009's group D modified `getLeadCanvas` to query
+`audit_log` for each activity's `agent_tier`, but
+`tests/lib/canvas/api.test.ts` was not updated to mock that path
+— two tests had been failing on v1 for several merges. D-014
+adds an `audit_log` chain to the test's `buildClient` helper
+and an `auditTiersResolve` knob; the tests now exercise the
+intended audit-tier coercion path.
+
+**Why this lives in D-014, not as a hotfix:** the two tests
+weren't blocking V0 (CI gates run a different suite), but they
+were noise during D-010..D-013 development. D-014 is the right
+place to flush these.
+
+### D-014.2 RLS audit summary — D-010..D-013 tables
+
+**Decision:** Each new table conforms to the Constitution II
+pattern:
+
+- **`whatsapp_inbound_log`** (D-010): RLS enabled. SELECT policy
+  `whatsapp_inbound_log_select_own_org` filters by
+  `organization_id = app_org_id()`. INSERT via service-role only
+  (no policy granted to `authenticated`). Append-only via
+  trigger.
+- **`org_whatsapp_endpoints`** (D-010): RLS enabled. SELECT
+  policy allows super_admin OR own org. Writes via service-role
+  only.
+- **`directives`** (D-011): RLS enabled. SELECT policy admits
+  rows where `organization_id IS NULL OR organization_id =
+  app_org_id()` (platform-default inheritance) AND a separate
+  super-admin policy admits all rows. Writes service-role only.
+- **`directive_invocations`** (D-011): RLS enabled. SELECT
+  policy filters by org. Append-only via trigger. INSERT via
+  service-role.
+- **`event_inbox_log`** (D-013): RLS enabled. SELECT policy
+  filters by org or super-admin. Append-only via trigger.
+
+Every domain `nodes` write inherits the existing
+`nodes_select_own_org` / `nodes_modify_own_org` policies from
+D-002.
+
+### D-014.3 Test coverage targets met
+
+**Decision:** D-014 confirms the unit test suite is 100% green
+(591 tests). The post-D-009 canvas test was the only outstanding
+failure on `v1`; it's now repaired. Coverage thresholds are
+enforced in `vitest.config.ts` (≥ 80 lines / 90 branches across
+the listed include patterns).
+
+### D-014.4 docs/architecture.md authored
+
+**Decision:** A flat snapshot of V0 architecture (file map, data
+model, seam table, Inngest topology) is authored at
+`docs/architecture.md`. Lives outside `memory/` because it's
+operator-facing reference, not memory; per CLAUDE.md
+authority order, `memory/decisions.md` remains the
+"why" record and `docs/architecture.md` is the "what & where".
+
+---

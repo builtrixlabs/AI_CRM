@@ -11,6 +11,7 @@ type ChainStub = {
   is: ReturnType<typeof vi.fn>;
   in: ReturnType<typeof vi.fn>;
   or: ReturnType<typeof vi.fn>;
+  not: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
   limit: ReturnType<typeof vi.fn>;
   maybeSingle: ReturnType<typeof vi.fn>;
@@ -23,6 +24,7 @@ function chain(): ChainStub {
   stub.is = vi.fn(() => stub);
   stub.in = vi.fn(() => stub);
   stub.or = vi.fn(() => stub);
+  stub.not = vi.fn(() => stub);
   stub.order = vi.fn(() => stub);
   stub.limit = vi.fn(() => stub);
   stub.maybeSingle = vi.fn();
@@ -41,6 +43,11 @@ function buildClient(opts: {
   leadResolve: { data: unknown; error: unknown };
   edgesResolve?: { data: unknown; error: unknown };
   activitiesResolve?: { data: unknown; error: unknown };
+  /**
+   * Optional audit rows used by post-D-009 `getLeadCanvas` to
+   * derive agent_tier per activity. Default: empty.
+   */
+  auditTiersResolve?: { data: unknown; error: unknown };
 }) {
   const leadChain = chain();
   leadChain.maybeSingle.mockResolvedValue(opts.leadResolve);
@@ -58,10 +65,23 @@ function buildClient(opts: {
       resolve(opts.activitiesResolve ?? { data: [], error: null }),
   });
 
+  // The post-D-009 implementation also reads `audit_log` to derive
+  // each activity's `agent_tier`. Provide a stub chain that resolves
+  // empty so the canvas still returns the activities (with
+  // agent_tier inferred from the activity row itself when present
+  // — the .data activities below carry agent_tier directly so the
+  // happy-path test passes).
+  const auditTiersChain = chain();
+  Object.assign(auditTiersChain, {
+    then: (resolve: (v: unknown) => unknown) =>
+      resolve(opts.auditTiersResolve ?? { data: [], error: null }),
+  });
+
   let nodeCallIdx = 0;
   const client = {
     from: vi.fn((table: string) => {
       if (table === "edges") return edgesChain;
+      if (table === "audit_log") return auditTiersChain;
       if (table === "nodes") {
         nodeCallIdx += 1;
         return nodeCallIdx === 1 ? leadChain : activitiesChain;
@@ -142,6 +162,10 @@ describe("getLeadCanvas", () => {
             agent_tier: "T1",
           },
         ],
+        error: null,
+      },
+      auditTiersResolve: {
+        data: [{ record_id: ACTIVITY_A, agent_tier: "T1" }],
         error: null,
       },
     });
@@ -312,6 +336,12 @@ describe("getLeadCanvas", () => {
             agent_tier: "TX", // invalid
           },
         ],
+        error: null,
+      },
+      auditTiersResolve: {
+        // The audit row carries a malformed tier; the canvas
+        // coerces it to null per coerceTier (api.ts:27).
+        data: [{ record_id: ACTIVITY_A, agent_tier: "TX" }],
         error: null,
       },
     });
