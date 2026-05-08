@@ -266,9 +266,109 @@ Format:
 ## injectable-supabase-client-for-tests  (confidence: 1)
 
 - First seen: D-001
+- Reinforced: D-006 (`getLeadCanvas` accepts an optional `client?` arg
+  for unit tests; production caller passes none and the function falls
+  back to `createSupabaseServerClient`).
 - Description: Functions that need a Supabase client (e.g.
   `getCurrentUser`) accept it as an optional argument. Production
   callers pass none and get a request-scoped server client; tests pass
   a mock. Avoids module-level singletons in business logic.
 - Anchor: `src/lib/auth/getCurrentUser.ts`,
-  `tests/lib/auth/getCurrentUser.test.ts`.
+  `src/lib/canvas/api.ts`,
+  `tests/lib/auth/getCurrentUser.test.ts`,
+  `tests/lib/canvas/api.test.ts`.
+
+## stacked-sections-with-motion  (confidence: 1)
+
+- First seen: D-006
+- Description: Operational surfaces that PRD describes as cards / panels
+  / tabs use stacked sections wrapped in a motion-aware section
+  component. Each section gets a staggered reveal (`opacity 0→1`,
+  `y 8→0`, `delay = index * 0.05s`). A `<MotionConfig reducedMotion="user">`
+  at the root honors the user's `prefers-reduced-motion` preference and
+  short-circuits all transitions to instant. Tests assert section order
+  + presence; reduced-motion is asserted by mounting inside a
+  `MotionConfig reducedMotion="always"` and checking that children render
+  without throwing — Framer's reduced-motion path is a different code
+  branch but the tree shape is identical.
+- Anchor: `src/components/canvas/canvas-section.tsx`,
+  `src/components/canvas/lead-canvas.tsx`,
+  `tests/components/canvas/canvas-section.test.tsx`,
+  `tests/components/canvas/lead-canvas.test.tsx`.
+
+## realtime-channel-with-defense-in-depth-org-filter  (confidence: 1)
+
+- First seen: D-006
+- Description: Supabase Realtime subscriptions for tenant-scoped channels
+  layer two filters: (1) RLS, server-side, load-bearing; (2) a
+  client-side `organization_id` (and optional `workspace_id`) check that
+  drops broadcasts whose payload doesn't match the current canvas's
+  scope, BEFORE merging into local state. The client check exists in
+  case of a Realtime regression or future RLS gap — Constitution II says
+  tenant isolation is architecturally impossible, not policy-prevented.
+  Cost: one comparison per message. Tested by injecting a mock channel
+  and emitting a cross-org payload; the hook must drop it.
+- Anchor: `src/components/canvas/realtime.ts`,
+  `tests/components/canvas/realtime.test.tsx`,
+  `tests/integration/canvas-realtime-isolation.test.ts`.
+
+## slot-contract-with-empty-state-default  (confidence: 1)
+
+- First seen: D-006
+- Description: When a UI surface needs a forward-compatible slot for a
+  not-yet-built feature (DOE engine, agent panel, etc.), ship the slot
+  as a component that takes optional `children`. Without children, it
+  renders an empty-state copy + a forward link to the placeholder
+  surface that will eventually populate it. With children, it renders
+  the children inside the same `<Card>` chrome and flips a
+  `data-empty="false"` attribute for tests/styling. The shape is the
+  open API for future directives — they implement the children, the
+  slot's wrapping chrome stays stable.
+- Anchor: `src/components/canvas/suggested-action-slot.tsx`,
+  `src/components/canvas/agent-panel-slot.tsx`,
+  `tests/components/canvas/slots.test.tsx`.
+
+## field-renderer-registry  (confidence: 1)
+
+- First seen: D-006
+- Description: Type-aware UI rendering for polymorphic data uses a
+  declarative registry: `const X_FIELDS = [{ key, label, kind, primary }]
+  as const` driving a `<FieldValue kind value>` component that switches
+  on `kind` (`string`/`email`/`phone`/`number`/`enum`/`score`/...).
+  Empty values hide the row entirely (progressive disclosure).
+  Unknown kinds fall through to `string`. Adding a new field type =
+  add a case in the switch + a new descriptor in the registry. No
+  per-type subcomponent explosion; tests cover one renderer per kind +
+  the empty-value + unknown-kind branches.
+- Anchor: `src/components/canvas/field-renderers.tsx`,
+  `tests/components/canvas/field-renderers.test.tsx`.
+
+## rsc-server-only-vs-client-safe-split  (confidence: 1)
+
+- First seen: D-006
+- Description: When a Server Component module (e.g. `lib/canvas/api.ts`
+  importing `next/headers` via `createSupabaseServerClient`) shares
+  helpers with Client Components (e.g. a channel-name formatter), split
+  the helpers into a separate file (`lib/canvas/channel.ts`) that has
+  zero server-only imports. Otherwise the bundler pulls the entire
+  server module into the client bundle and the build fails with
+  "Ecmascript file had an error" pointing at `next/headers`. Discovered
+  at `npm run build` time; the build is the load-bearing detector.
+- Anchor: `src/lib/canvas/api.ts`, `src/lib/canvas/channel.ts`,
+  `src/components/canvas/realtime.ts`.
+
+## rtl-vitest-setup-with-env-stub  (confidence: 1)
+
+- First seen: D-006
+- Description: To unit-test React components in Vitest with React
+  Testing Library, the setup file must (1) import
+  `@testing-library/jest-dom/vitest`, (2) register `afterEach(cleanup)`
+  so RTL's auto-cleanup runs between tests (vital for `it.each`
+  iterations that would otherwise accumulate DOM), and (3) `vi.stubEnv`
+  fake values for `NEXT_PUBLIC_SUPABASE_URL` /
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` so any test that lazily
+  constructs the browser client doesn't throw. JSDOM environment is
+  selected per-file via `// @vitest-environment jsdom` pragma rather
+  than `environmentMatchGlobs` (removed in vitest 4.x). The vitest
+  config also needs `@vitejs/plugin-react` for JSX/TSX transform.
+- Anchor: `tests/setup-rtl.ts`, `vitest.config.ts`.
