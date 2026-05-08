@@ -101,7 +101,6 @@ export function Wizard(props: {
                   required
                   err={err("primary_contact_email")}
                 />
-                <Field id="rera_number" label="RERA number (optional)" />
                 <Field id="gstin" label="GSTIN (optional)" />
               </>
             )}

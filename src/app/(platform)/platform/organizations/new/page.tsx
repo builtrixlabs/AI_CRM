@@ -29,8 +29,9 @@ export default function ProvisionOrgPage() {
           Provision a new organization
         </h1>
         <p className="text-sm text-neutral-600">
-          Creates the org, default workspace, org_admin profile, subscription,
-          and a magic-link for the org_admin to sign in.
+          Creates the org, default workspace, subscription, and an
+          org_admin auth user with the password you set below. No
+          email is sent — share credentials out of band.
         </p>
       </header>
 
@@ -67,45 +68,64 @@ export default function ProvisionOrgPage() {
               {err("slug") && <p className="text-xs text-red-600 mt-1">{err("slug")}</p>}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="rera_number">RERA number (optional)</Label>
-                <Input id="rera_number" name="rera_number" />
+            <div>
+              <Label htmlFor="gstin">GSTIN (optional)</Label>
+              <Input id="gstin" name="gstin" />
+            </div>
+
+            <div className="pt-4 border-t">
+              <h3 className="font-medium text-sm mb-3">Org admin (initial user)</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="primary_contact_name">Name</Label>
+                  <Input id="primary_contact_name" name="primary_contact_name" required />
+                  {err("primary_contact_name") && (
+                    <p className="text-xs text-red-600 mt-1">{err("primary_contact_name")}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="primary_contact_email">Email (used to sign in)</Label>
+                  <Input
+                    id="primary_contact_email"
+                    name="primary_contact_email"
+                    type="email"
+                    required
+                    autoComplete="off"
+                  />
+                  {err("primary_contact_email") && (
+                    <p className="text-xs text-red-600 mt-1">{err("primary_contact_email")}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="primary_contact_phone">Phone (optional)</Label>
+                  <Input id="primary_contact_phone" name="primary_contact_phone" />
+                </div>
+
+                <div>
+                  <Label htmlFor="org_admin_password">
+                    Initial password (min 8 chars)
+                  </Label>
+                  <Input
+                    id="org_admin_password"
+                    name="org_admin_password"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                  />
+                  <p className="text-xs text-neutral-500 mt-1">
+                    The org_admin will sign in with email + this password. Share
+                    out of band; recommend rotating after first login.
+                  </p>
+                  {err("org_admin_password") && (
+                    <p className="text-xs text-red-600 mt-1">{err("org_admin_password")}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <Label htmlFor="gstin">GSTIN (optional)</Label>
-                <Input id="gstin" name="gstin" />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="primary_contact_name">Primary contact name</Label>
-              <Input id="primary_contact_name" name="primary_contact_name" required />
-              {err("primary_contact_name") && (
-                <p className="text-xs text-red-600 mt-1">{err("primary_contact_name")}</p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="primary_contact_email">
-                Primary contact email (becomes the org_admin)
-              </Label>
-              <Input
-                id="primary_contact_email"
-                name="primary_contact_email"
-                type="email"
-                required
-              />
-              {err("primary_contact_email") && (
-                <p className="text-xs text-red-600 mt-1">{err("primary_contact_email")}</p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="primary_contact_phone">
-                Primary contact phone (optional)
-              </Label>
-              <Input id="primary_contact_phone" name="primary_contact_phone" />
             </div>
 
             <div>

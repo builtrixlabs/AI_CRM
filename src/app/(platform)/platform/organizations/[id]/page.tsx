@@ -49,9 +49,6 @@ export default async function OrgDetailPage(props: {
             <dt className="text-neutral-500">Created</dt>
             <dd>{new Date(detail.created_at).toLocaleString()}</dd>
 
-            <dt className="text-neutral-500">RERA</dt>
-            <dd>{detail.rera_number ?? "—"}</dd>
-
             <dt className="text-neutral-500">GSTIN</dt>
             <dd>{detail.gstin ?? "—"}</dd>
 

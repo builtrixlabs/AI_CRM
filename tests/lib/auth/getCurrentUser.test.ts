@@ -82,7 +82,16 @@ describe("getCurrentUser", () => {
     const result = await getCurrentUser(client as unknown as never);
     expect(result).toEqual({
       user: { id: "u-1", email: "rep@example.com" },
-      profile: { id: "u-1", display_name: "Rep One", base_role: "sales_rep" },
+      profile: {
+        id: "u-1",
+        display_name: "Rep One",
+        base_role: "sales_rep",
+        // Optional profile fields default through the mapper:
+        //   phone -> null, notification_prefs -> {}, theme -> "system".
+        phone: null,
+        notification_prefs: {},
+        theme: "system",
+      },
       org_id: "org-1",
       workspace_ids: ["ws-1"], // null workspace_ids excluded
       app_roles: [

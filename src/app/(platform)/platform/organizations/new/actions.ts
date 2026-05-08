@@ -12,7 +12,6 @@ import {
 export type ProvisionFormState = {
   errors?: Record<string, string[]>;
   message?: string;
-  magic_link_url?: string | null;
 };
 
 export async function provisionAction(
@@ -27,12 +26,12 @@ export async function provisionAction(
   const raw = {
     name: (formData.get("name") ?? "").toString().trim(),
     slug: (formData.get("slug") ?? "").toString().trim(),
-    rera_number: (formData.get("rera_number") ?? "").toString().trim() || undefined,
     gstin: (formData.get("gstin") ?? "").toString().trim() || undefined,
     primary_contact_name: (formData.get("primary_contact_name") ?? "").toString().trim(),
     primary_contact_email: (formData.get("primary_contact_email") ?? "").toString().trim(),
     primary_contact_phone:
       (formData.get("primary_contact_phone") ?? "").toString().trim() || undefined,
+    org_admin_password: (formData.get("org_admin_password") ?? "").toString(),
     plan_tier: (formData.get("plan_tier") ?? "starter").toString() as
       | "starter"
       | "professional"

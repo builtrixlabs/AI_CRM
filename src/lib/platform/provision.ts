@@ -12,11 +12,19 @@ export const provisionOrganizationSchema = z
       .regex(/^[a-z0-9-]+$/, "lowercase letters, digits, dashes only")
       .min(3)
       .max(50),
-    rera_number: z.string().optional(),
     gstin: z.string().optional(),
     primary_contact_name: z.string().min(1),
     primary_contact_email: z.string().email(),
     primary_contact_phone: z.string().optional(),
+    /**
+     * Initial password for the org_admin. Required (no magic-link
+     * flow — operator preference 2026-05-08: super_admin sets the
+     * password directly and hands it to the org_admin out of band).
+     */
+    org_admin_password: z
+      .string()
+      .min(8, "password must be at least 8 characters")
+      .max(128),
     plan_tier: z.enum(["starter", "professional", "enterprise", "custom"]),
   })
   .strict();
@@ -27,9 +35,7 @@ export type ProvisionResult = {
   organization_id: string;
   workspace_id: string;
   org_admin_user_id: string;
-  /** Magic-link URL the super_admin should email to the org_admin
-   * out-of-band. Custom email branding lands in a future directive. */
-  magic_link_url: string | null;
+  org_admin_email: string;
 };
 
 /**
@@ -39,6 +45,11 @@ export type ProvisionResult = {
  *
  * No DB transaction (Supabase JS doesn't expose them) — manual rollback
  * runs the inverse of every successful step on partial failure.
+ *
+ * Auth flow: operator-set password (no magic link). The auth user is
+ * created with `email_confirm: true` and the supplied password, so the
+ * org_admin can immediately sign in via the email+password mode of the
+ * sign-in page. Super_admin shares the credentials out of band.
  */
 export async function provisionOrganization(
   user: CurrentUser,
@@ -63,7 +74,6 @@ export async function provisionOrganization(
         .insert({
           slug: parsed.slug,
           name: parsed.name,
-          rera_number: parsed.rera_number ?? null,
           gstin: parsed.gstin ?? null,
           primary_contact_email: parsed.primary_contact_email,
           plan_tier: parsed.plan_tier,
@@ -97,11 +107,13 @@ export async function provisionOrganization(
       workspace_id = data.id;
     }
 
-    // 3. create the org_admin user (no email — we mint the magic link below
-    //    and return it to the caller, who delivers it out-of-band).
+    // 3. create the org_admin auth user with the operator-supplied
+    //    password. email_confirm:true skips the verification email;
+    //    the org_admin signs in directly with email + password.
     {
       const { data, error } = await client.auth.admin.createUser({
         email: parsed.primary_contact_email,
+        password: parsed.org_admin_password,
         email_confirm: true,
       });
       if (error) throw error;
@@ -116,6 +128,7 @@ export async function provisionOrganization(
         email: parsed.primary_contact_email,
         display_name: parsed.primary_contact_name,
         base_role: "org_admin",
+        phone: parsed.primary_contact_phone ?? null,
         created_by: auth_user_id,
         created_via,
         updated_by: auth_user_id,
@@ -138,23 +151,8 @@ export async function provisionOrganization(
       if (error) throw error;
     }
 
-    // 6. mint a magic-link for the org_admin (best-effort; if the link
-    //    can't be generated we still proceed — the org is provisioned
-    //    and super_admin can re-issue from the platform UI later).
-    let magic_link_url: string | null = null;
-    try {
-      const { data } = await client.auth.admin.generateLink({
-        type: "magiclink",
-        email: parsed.primary_contact_email,
-      });
-      magic_link_url =
-        (data as { properties?: { action_link?: string } })?.properties
-          ?.action_link ?? null;
-    } catch {
-      // Don't block provisioning on link generation. Caller can re-issue.
-    }
-
-    // 7. consolidated audit_log row
+    // 6. consolidated audit_log row. Password is NEVER recorded;
+    //    only the fact that one was set + by whom.
     await client.from("audit_log").insert({
       actor_id: actor,
       actor_type: "user",
@@ -171,7 +169,7 @@ export async function provisionOrganization(
           primary_contact_email: parsed.primary_contact_email,
           workspace_id,
           org_admin_user_id: auth_user_id,
-          magic_link_minted: !!magic_link_url,
+          password_set: true,
         },
       },
     });
@@ -180,7 +178,7 @@ export async function provisionOrganization(
       organization_id: organization_id!,
       workspace_id: workspace_id!,
       org_admin_user_id: auth_user_id!,
-      magic_link_url,
+      org_admin_email: parsed.primary_contact_email,
     };
   } catch (err) {
     // Rollback in reverse order. Best-effort; ignores compensating-delete

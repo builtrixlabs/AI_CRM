@@ -34,9 +34,22 @@ export type AppRoleAssignment = {
   app_role: AppRole;
 };
 
+export type NotificationPrefs = {
+  email_enabled?: boolean;
+  in_app_enabled?: boolean;
+  digest_frequency?: "off" | "daily" | "weekly";
+};
+
 export type CurrentUser = {
   user: { id: string; email: string };
-  profile: { id: string; display_name: string; base_role: BaseRole };
+  profile: {
+    id: string;
+    display_name: string;
+    base_role: BaseRole;
+    phone?: string | null;
+    notification_prefs?: NotificationPrefs;
+    theme?: "light" | "dark" | "system";
+  };
   org_id: string | null;
   workspace_ids: string[];
   app_roles: AppRoleAssignment[];

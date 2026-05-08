@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
+import { SignOutButton } from "@/components/auth/sign-out-button";
+import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
 const NAV = [
   { href: "/platform", label: "Home" },
@@ -11,21 +13,33 @@ const NAV = [
   { href: "/platform/tickets", label: "Tickets" },
   { href: "/platform/settings", label: "Settings" },
   { href: "/platform/settings/secrets", label: "Secrets" },
+  { href: "/platform/settings/profile", label: "My profile" },
 ];
 
-export default function PlatformLayout({
+export default async function PlatformLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getCurrentUser();
+  const displayName = user?.profile.display_name ?? user?.user.email ?? "super_admin";
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b bg-neutral-950 text-neutral-50">
-        <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between">
+        <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between gap-4">
           <Link href="/platform" className="font-semibold tracking-tight">
             Builtrix · Platform
           </Link>
-          <span className="text-xs text-neutral-400">super_admin</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-neutral-400" title={user?.user.email ?? ""}>
+              {displayName}
+            </span>
+            <SignOutButton
+              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs hover:bg-neutral-800"
+              redirectTo="/auth/sign-in"
+            />
+          </div>
         </div>
       </header>
 

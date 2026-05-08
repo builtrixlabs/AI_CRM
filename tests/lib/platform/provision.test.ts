@@ -29,6 +29,7 @@ const validInput = {
   slug: "lodha-group",
   primary_contact_name: "Anita Bhalla",
   primary_contact_email: "anita@lodha.example.com",
+  org_admin_password: "initial-strong-password-1",
   plan_tier: "professional" as const,
 };
 
@@ -48,6 +49,30 @@ describe("provisionOrganizationSchema", () => {
     expect(
       provisionOrganizationSchema.safeParse({ ...validInput, plan_tier: "infinite" })
         .success
+    ).toBe(false);
+  });
+
+  it("rejects missing org_admin_password", () => {
+    const { org_admin_password: _omit, ...rest } = validInput;
+    void _omit;
+    expect(provisionOrganizationSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects org_admin_password shorter than 8 chars", () => {
+    expect(
+      provisionOrganizationSchema.safeParse({
+        ...validInput,
+        org_admin_password: "short",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects unknown rera_number key (strict — RERA was removed)", () => {
+    expect(
+      provisionOrganizationSchema.safeParse({
+        ...validInput,
+        rera_number: "RERA-AGENT-XYZ",
+      }).success
     ).toBe(false);
   });
 
@@ -160,16 +185,17 @@ describe("provisionOrganization happy path", () => {
     expect(result.organization_id).toBe(ORG_ID);
     expect(result.workspace_id).toBe(WS_ID);
     expect(result.org_admin_user_id).toBe(USER_ID);
-    expect(result.magic_link_url).toBe("https://example/auth#token=xyz");
+    expect(result.org_admin_email).toBe("anita@lodha.example.com");
 
     const ops = calls.map((c) => `${c.table}:${c.op}`);
+    // Provision flow no longer mints a magic link (operator-set
+    // password path; 2026-05-08).
     expect(ops).toEqual([
       "organizations:insert",
       "workspaces:insert",
       "auth:createUser",
       "profiles:insert",
       "subscriptions:insert",
-      "auth:generateLink",
       "audit_log:insert",
     ]);
   });

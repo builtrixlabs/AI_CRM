@@ -7,6 +7,9 @@ type ProfileRow = {
   display_name: string;
   base_role: string;
   organization_id: string | null;
+  phone?: string | null;
+  notification_prefs?: Record<string, unknown> | null;
+  theme?: string | null;
 };
 
 type AppRoleRow = {
@@ -37,7 +40,9 @@ export async function getCurrentUser(
 
   const { data: profile, error: profileError } = (await c
     .from("profiles")
-    .select("id, display_name, base_role, organization_id")
+    .select(
+      "id, display_name, base_role, organization_id, phone, notification_prefs, theme"
+    )
     .eq("id", user.id)
     .single()) as { data: ProfileRow | null; error: unknown };
 
@@ -62,12 +67,22 @@ export async function getCurrentUser(
     )
   );
 
+  const themeRaw = profile.theme;
+  const theme: "light" | "dark" | "system" =
+    themeRaw === "light" || themeRaw === "dark" ? themeRaw : "system";
+
   return {
     user: { id: user.id, email: user.email ?? "" },
     profile: {
       id: profile.id,
       display_name: profile.display_name,
       base_role: profile.base_role as BaseRole,
+      phone: profile.phone ?? null,
+      notification_prefs:
+        (profile.notification_prefs as
+          | import("./types").NotificationPrefs
+          | undefined) ?? {},
+      theme,
     },
     org_id: profile.organization_id,
     workspace_ids,
