@@ -53,3 +53,4 @@ desktop.ini
 logs/
 
 .vercel
+.claude/worktrees/

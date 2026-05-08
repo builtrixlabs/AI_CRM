@@ -52,7 +52,11 @@ type ActivityRow = {
   created_by: string;
   created_via: string;
   ai_confidence: number | null;
-  agent_tier?: string | null;
+};
+
+type AgentAuditRow = {
+  record_id: string | null;
+  agent_tier: string | null;
 };
 
 type EdgeRow = {
@@ -134,7 +138,7 @@ export async function getLeadCanvas(
   const activitiesResult = await supabase
     .from("nodes")
     .select(
-      "id, organization_id, workspace_id, label, data, created_at, created_by, created_via, ai_confidence, agent_tier"
+      "id, organization_id, workspace_id, label, data, created_at, created_by, created_via, ai_confidence"
     )
     .in("id", Array.from(activityIds))
     .eq("node_type", "activity")
@@ -144,6 +148,26 @@ export async function getLeadCanvas(
 
   if (activitiesResult.error || !activitiesResult.data) {
     return { lead, activities: [] };
+  }
+
+  // Best-effort agent_tier resolution: agent_tier lives on audit_log, not on
+  // the activity node itself. Look up the most recent agent-actor audit row
+  // for each activity. If the join is unavailable (RLS, no rows), fall back
+  // to null.
+  const tierByActivity = new Map<string, AgentTier | null>();
+  const auditTiers = await supabase
+    .from("audit_log")
+    .select("record_id, agent_tier")
+    .in("record_id", Array.from(activityIds))
+    .eq("actor_type", "agent")
+    .not("agent_tier", "is", null)
+    .order("ts", { ascending: false })
+    .limit(activityIds.size * 4);
+  if (!auditTiers.error && auditTiers.data) {
+    for (const row of auditTiers.data as AgentAuditRow[]) {
+      if (!row.record_id || tierByActivity.has(row.record_id)) continue;
+      tierByActivity.set(row.record_id, coerceTier(row.agent_tier));
+    }
   }
 
   const activities: CanvasActivity[] = (activitiesResult.data as ActivityRow[]).map(
@@ -157,7 +181,7 @@ export async function getLeadCanvas(
       created_by: row.created_by,
       created_via: row.created_via,
       ai_confidence: row.ai_confidence,
-      agent_tier: coerceTier(row.agent_tier),
+      agent_tier: tierByActivity.get(row.id) ?? null,
     })
   );
 
