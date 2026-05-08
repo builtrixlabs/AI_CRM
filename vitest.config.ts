@@ -27,6 +27,7 @@ export default defineConfig({
         "src/lib/canvas/**",
         "src/components/canvas/**",
         "src/lib/leads/**",
+        "src/lib/cmdk/**",
         "src/app/(dashboard)/dashboard/_actions/**",
       ],
       thresholds: {

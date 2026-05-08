@@ -31,28 +31,16 @@ const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 20;
 
 /**
- * RLS-scoped fuzzy lookup over the user's tenant leads. Used by the
- * Cmd+K "Open lead by name…" sub-mode.
- *
- * Tenant-isolation contract: uses the request-scoped server client
- * (not service-role); RLS policies on `nodes` (D-001) drop rows whose
- * organization_id ≠ caller's `auth.app_org_id()` claim.
- *
- * No `read_sensitive` audit row — operational-tier read by the
- * workspace's own user (D-004.4 / D-006.4 precedent).
+ * Runs the underlying SELECT against the supplied (authenticated) client.
+ * The client's RLS posture handles tenant isolation. Used by both the
+ * `searchLeads` server action AND integration tests that inject an
+ * authenticated client directly to verify RLS without a cookie context.
  */
-export async function searchLeads(
+export async function searchLeadsByClient(
+  client: SupabaseClient,
   query: string,
   limit?: number,
-  client?: SupabaseClient,
 ): Promise<SearchLeadsResult> {
-  const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "permission" };
-  const perms = resolveForUser(user);
-  if (!perms.has("leads:view")) {
-    return { ok: false, error: "permission" };
-  }
-
   const parsed = querySchema.safeParse(query);
   if (!parsed.success) {
     return {
@@ -64,13 +52,11 @@ export async function searchLeads(
   const trimmed = parsed.data;
   const cappedLimit = Math.max(1, Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT));
 
-  const supabase = client ?? (await createSupabaseServerClient());
-
-  // ILIKE escaping: replace LIKE-special chars (% _) so user input is literal.
+  // ILIKE escaping: replace LIKE-special chars (% _ \) so user input is literal.
   const escaped = trimmed.replace(/[\\%_]/g, (m) => `\\${m}`);
   const pattern = `%${escaped}%`;
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("nodes")
     .select("id, label, state, data")
     .eq("node_type", "lead")
@@ -101,4 +87,31 @@ export async function searchLeads(
   }));
 
   return { ok: true, results };
+}
+
+/**
+ * RLS-scoped fuzzy lookup over the user's tenant leads. Used by the
+ * Cmd+K "Open lead by name…" sub-mode.
+ *
+ * Tenant-isolation contract: uses the request-scoped server client
+ * (not service-role); RLS policies on `nodes` (D-001) drop rows whose
+ * organization_id ≠ caller's `auth.app_org_id()` claim.
+ *
+ * No `read_sensitive` audit row — operational-tier read by the
+ * workspace's own user (D-004.4 / D-006.4 precedent).
+ */
+export async function searchLeads(
+  query: string,
+  limit?: number,
+  client?: SupabaseClient,
+): Promise<SearchLeadsResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "permission" };
+  const perms = resolveForUser(user);
+  if (!perms.has("leads:view")) {
+    return { ok: false, error: "permission" };
+  }
+
+  const supabase = client ?? (await createSupabaseServerClient());
+  return searchLeadsByClient(supabase, query, limit);
 }
