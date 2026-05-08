@@ -688,3 +688,45 @@ Format:
 - Anchor: `supabase/migrations/20260508130300_workspace_inbox_helper.sql`
   (`v_system_uuid`),
   `src/lib/webhooks/whatsapp/ingest.ts` (`SYSTEM_UUID`).
+
+## platform-default-via-null-org-id  (confidence: 1)
+
+- First seen: D-011 (`directives` table)
+- Description: Cross-tenant defaults that all orgs inherit live as
+  rows with `organization_id IS NULL`. Per-org overrides are rows
+  with the org's id and the same logical key (e.g. `code`).
+  Runtime resolution: SELECT both, group by key, prefer org-
+  specific. RLS allows authenticated users to SELECT both
+  (`organization_id IS NULL OR organization_id = app_org_id()`).
+  Mutations to the NULL-org rows are restricted to service-role
+  (no policy granted to authenticated for INSERT / UPDATE).
+- Anchor: `supabase/migrations/20260508140000_directives.sql`,
+  `src/lib/doe/runtime.ts` `loadActiveDirectives`.
+
+## doe-ledger-as-rate-limit-source  (confidence: 1)
+
+- First seen: D-011 (`directive_invocations`)
+- Description: Per-directive per-org rate limit (e.g. ≤ 100 fires
+  per 24h) is computed by `SELECT count(*) FROM
+  directive_invocations WHERE directive_id=? AND
+  organization_id=? AND outcome='dispatched' AND ts >= now()-24h`.
+  No separate counter table or Redis cache; the audit ledger is
+  the rate-limit source. Idempotency uses the same ledger with a
+  partial unique index on
+  `(directive_id, subject_node_id, trigger_id) WHERE
+  outcome='dispatched'`.
+- Anchor: `src/lib/doe/runtime.ts` `isRateLimited`,
+  `supabase/migrations/20260508140100_directive_invocations.sql`
+  (partial unique index).
+
+## tier-3-stops-runtime-pending-approval  (confidence: 2)
+
+- First seen: D-009 (Lead Enrichment T1), reinforced D-011
+- Description: Runtime layers — `runAgent` (D-009) and
+  `dispatchDirective` (D-011) — both refuse to execute T3/T4
+  actions. They stamp `outcome='pending_approval'` (D-011) or
+  throw `TierCeilingExceededError` (D-009 when attempted_tier
+  exceeds the agent's `max_tier`). Constitution I: agents are
+  colleagues, never autopilots. Approval queue UI is V1.
+- Anchor: `src/lib/agents/runtime.ts`,
+  `src/lib/doe/runtime.ts`.

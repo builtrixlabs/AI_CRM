@@ -940,3 +940,80 @@ rejected doesn't either — the ledger is the audit equivalent for
 the reject path).
 
 ---
+
+## 2026-05-08 — D-011 DOE Workflow Engine V0
+
+### D-011.1 Single `directives` table with `organization_id NULL` for platform defaults
+
+**Decision:** One row per directive, with `organization_id IS NULL`
+meaning "platform default, all orgs inherit." Per-org rows shadow
+the platform default for the same `code`. Runtime UNION-ALL's via
+a single SELECT and then dedup-by-code in the app layer with
+"org-specific wins."
+
+**Alternatives considered:**
+- Per-org-only rows (no platform-default concept). **Rejected** —
+  every new org would need to seed 15 rows. Operationally noisy
+  and version-drift prone.
+- Two tables (`directives_default` + `directives_org`). **Rejected**
+  — duplicate schema; the `organization_id NULL` pattern is what
+  Supabase RLS handles fluently.
+
+### D-011.2 `directive_invocations` is the rate-limit + idempotency source
+
+**Decision:** Idempotency = unique `(directive_id, subject_node_id,
+trigger_id) WHERE outcome='dispatched'` partial index. Rate limit
+= `SELECT COUNT(*)` over the last 24h, dispatched-only. Both checks
+hit the same table; no separate counter / cache.
+
+**Why:** the ledger is required anyway (audit story). One source
+of truth beats duplicating data into a cache that can drift.
+
+### D-011.3 T3+ directives stamp `pending_approval`, runtime stops
+
+**Decision:** When a matched directive's tier is T3 or T4, the
+runtime records `outcome='pending_approval'` and does NOT execute
+the action handler. Constitution I — agents are colleagues, not
+autopilots. Per-action human approval is required for T3 (custom
+outbound, deal-term changes, lead reassignment) and T4 (bulk).
+
+**Trade-off:** the V0 surface to approve these is missing
+(`/admin/agents/queue` — V1). Pending rows pile up in the ledger.
+Acceptable for V0 since the seed has zero T3/T4 directives;
+future per-org overrides may add them.
+
+### D-011.4 Action handlers write nodes via `createNode`, not direct INSERT
+
+**Decision:** All action handlers route their writes through
+`createNode` / `updateNodeData` from D-002. Audit + provenance +
+realtime publication are inherited automatically. The runtime
+also writes its own `audit_log` row with `action='directive_fired'`
+on top of the per-mutation audit row from `createNode`, so the
+"why" is captured alongside the "what."
+
+### D-011.5 `enqueue_agent` is declarative, not actually re-emitting events
+
+**Decision:** D-01's seed declares `action_kind='enqueue_agent'`
+with `agent_type='lead_enrichment'`. The handler returns
+`{enqueued: false, reason: 'already-emitted-by-createLead'}`
+because `createLead` already emits `lead.created` which the
+existing `lead-enrichment-on-create` Inngest function consumes.
+The declaration documents the wiring + audits each lead-creation
+event.
+
+**Why:** double-emission would double-fire the agent. The
+declaration is intentionally idempotent.
+
+### D-011.6 No notifications table for V0
+
+**Decision:** `notify_user` writes a `note` node with
+`data.custom.notification=true` + `audience` instead of writing to
+a separate `notifications` table. Reuses realtime + RLS + audit
+infrastructure that already exists for nodes.
+
+**Trade-off:** filtering "my notifications" is a `nodes` SELECT
+with `data->custom->>notification = 'true' AND
+data->custom->>audience = $user_id`. JSONB queries are slower than
+indexed FK lookups; acceptable for V0 volume.
+
+---
