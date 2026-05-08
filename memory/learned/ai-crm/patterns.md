@@ -730,3 +730,31 @@ Format:
   colleagues, never autopilots. Approval queue UI is V1.
 - Anchor: `src/lib/agents/runtime.ts`,
   `src/lib/doe/runtime.ts`.
+
+## cron-window-sweep-with-doe-idempotency  (confidence: 1)
+
+- First seen: D-012 (`siteVisitWindowSweep`)
+- Description: For "fire when X is N hours away" patterns, run a
+  single cron Inngest function on a fixed cadence (15 min) that
+  scans for matching rows (e.g. `data.scheduled_at` in
+  `[now+N-15m, now+N+15m]`) and dispatches the DOE runtime per
+  match. Idempotency is the DOE runtime's job:
+  `trigger_id = '<kind>:<subject>:<N>'`. The cron is self-healing
+  — re-running on the same window produces `skipped_idempotent`.
+  Self-correcting under schedule edits (no per-row Inngest
+  schedule to cancel).
+- Anchor: `src/lib/inngest/functions/site-visit-window-sweep.ts`,
+  `src/lib/sitevisits/api.ts` `findUpcomingSiteVisits`.
+
+## tier-2-templated-no-gateway  (confidence: 1)
+
+- First seen: D-012 (Site Visit Reminder Agent)
+- Description: T2 agents (templated comms) load body text from a
+  literal template table inside the handler — no `gateway.complete`
+  call. Constitution I T2 = "pre-approved template comms," no
+  generative content. The handler still writes an audit row with
+  `prompt_version` set; the version represents the *agent
+  behaviour* version, not just the LLM prompt version. T3 is the
+  tier that involves `gateway.complete` for personalization.
+- Anchor: `src/lib/agents/site-visit-reminder.ts`
+  (`templateBody` function).

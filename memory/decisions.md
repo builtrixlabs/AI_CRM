@@ -1017,3 +1017,67 @@ data->custom->>audience = $user_id`. JSONB queries are slower than
 indexed FK lookups; acceptable for V0 volume.
 
 ---
+
+## 2026-05-08 — D-012 Site Visit + Reminder Agent (T2)
+
+### D-012.1 Reminder agent uses templated body, no gateway call
+
+**Decision:** The Site Visit Reminder Agent (T2) does NOT call
+`gateway.complete` for V0. T2 means "templated outbound" —
+constitution I lists the tier explicitly as
+"pre-approved, template-based comms." The handler picks a body
+from a literal template table (T-12 → 24h, T-13 → 2h) and writes
+the activity. Saves a gateway round-trip + dollars; matches the
+T2 contract exactly.
+
+**Implications:** when D-016 wires real outbound (template approval
++ provider send), the agent's body builder swaps to load from the
+`templates` table. The audit row's `prompt_version` field carries
+`v1` even without a gateway call — it represents the agent
+behavior version, not just LLM-prompt versions.
+
+### D-012.2 Cron sweep + DOE dispatch instead of per-visit Inngest scheduled events
+
+**Decision:** A single cron Inngest function (`*/15 * * * *`) scans
+for visits in the 24h / 2h windows and emits one `site_visit.window`
+trigger to the DOE runtime per matching visit. Idempotency is
+the DOE runtime's responsibility via
+`trigger_id='site_visit.window:<visit_id>:<hours_until>'`.
+
+**Alternatives considered:**
+- Schedule a per-visit Inngest scheduled event when the visit is
+  created. **Rejected** — Inngest schedules can be cancelled but
+  an arbitrary visit-edit makes the schedule stale; scanning every
+  15 min is simpler and self-healing.
+- Postgres `pg_cron`. **Rejected for V0** — adds a Postgres
+  extension dependency and lives outside our Inngest observability.
+
+### D-012.3 Cron sweep is global (org_id NULL)
+
+**Decision:** `findUpcomingSiteVisits` accepts `organization_id ?:
+string | null` — null means "all orgs". The cron uses null since
+it runs at platform tier (service-role). Each emitted DOE event
+carries the visit's actual org id, so per-org rate limiting +
+audit still apply downstream.
+
+### D-012.4 Visit creation emits NO Inngest event
+
+**Decision:** `createSiteVisit` does not call `inngest.send`. The
+DOE runtime is reached via the cron sweep. Avoids two-source-of-
+truth between event-driven and scan-driven dispatch.
+
+**Trade-off:** a visit scheduled within the next 30 minutes might
+miss the 2h window if the cron just ran. Acceptable for V0 — the
+operator-facing UX displays the upcoming visit immediately on the
+canvas; the reminder is a nice-to-have, not the visit's source of
+truth.
+
+### D-012.5 Site visits link to leads via `attended` edge
+
+**Decision:** `createSiteVisit` writes the visit node + an edge
+`from=visit_id, to=lead_id, edge_type='attended'`. The schema's
+`edge_type` enum already names `attended` (D-002 baseline 110).
+The canvas's edge query for the lead picks up the visit on the
+"site visits" section without a separate lookup.
+
+---
