@@ -776,3 +776,90 @@ branched off `feature/007-lead-lifecycle`. PR targets that branch;
 retarget to `v1` after D-006 → D-007 merge train clears.
 
 ---
+
+## 2026-05-08 — D-009 Model Gateway V0 + Lead Enrichment Agent (T1)
+
+### D-009.1 Single Model Gateway seam (Constitution VII binding)
+
+**Decision:** Every LLM completion + embedding goes through
+`src/lib/ai/gateway.ts`'s `complete()` / `embed()`. Direct imports
+of `@anthropic-ai/sdk` or `openai` outside `src/lib/ai/providers/`
+are forbidden. D-014 hardening adds an ESLint rule + CI grep guard.
+
+### D-009.2 Anthropic primary + OpenAI fallback (single retry)
+
+**Decision:** Completion default: Anthropic `claude-sonnet-4-6`.
+Fallback: OpenAI `gpt-4o-mini` on a single retry triggered ONLY by
+`rate_limit`/`server`/`network` errors. Auth/parse errors are
+non-transient and DO NOT trigger fallback. Embedding default:
+OpenAI `text-embedding-3-small` (Anthropic has no embedding model
+at V0).
+
+### D-009.3 Token cap V0 = hardcoded global; plan-tier defaults D-014
+
+**Decision:** `MONTHLY_TOKEN_CAP = 100_000` per org per UTC calendar
+month, `SOFT_WARN_RATIO = 0.8`. Plan-tier-driven defaults land in
+D-014 hardening.
+
+### D-009.4 Lead Enrichment Agent triggered via Inngest event
+
+**Decision:** D-007's `createLead` emits `lead.created` via
+`inngest.send(...)` AFTER the DB commit. Send failure logs but does
+NOT roll back the lead.
+
+**Alternatives considered:** DB trigger → LISTEN/NOTIFY (rejected;
+adds bridge), cron sweep (rejected; latency).
+
+### D-009.5 PII masking via `textOfRecord(node)` for embeddings
+
+**Decision:** All embedding source text is built via
+`src/lib/nodes/text.ts` `textOfRecord(node)`. Per-node-type
+allowlist of safe keys; phone/email/notes/full-name dropped. Label
+is masked for phone/email patterns.
+
+**Trade-off:** the Lead Enrichment Agent's prompt receives the
+lead's `label` (PII) directly — documented in baseline 115; the
+prompt instructs the model NOT to echo PII in output.
+
+### D-009.6 Tier ceiling enforced at TWO layers (runtime + DB)
+
+**Decision:** Runtime `runAgent` throws `TierCeilingExceededError`
+on breach. DB `audit_log` BEFORE INSERT trigger rejects rows where
+`agent_tier > service_account.max_tier` (defense-in-depth per
+D-007.9 precedent).
+
+### D-009.7 Prompt files under `src/prompts/<agent>/v<N>.md`
+
+**Decision:** Constitution VIII names this as the prompt authority.
+File-based prompts are git-versioned + greppable. DB-backed prompt
+store + UI is V1+.
+
+### D-009.8 Embedding-refresh body replaced (D-002 stub closed)
+
+**Decision:** D-002's stub that marked rows `deferred-d009` is
+replaced with the real `gateway.embed(textOfRecord(node))` path.
+Same function id, same triggers, new body. Existing
+`deferred-d009` rows process on the next cron sweep.
+
+### D-009.9 Stacked PR off feature/008 (4th in the chain)
+
+**Decision:** D-009's branch branched off `feature/008-cmdk-
+bounded-catalog`. Once the chain merges to `v1`, retarget to `v1`.
+
+### D-009.10 Append-only ledger via trigger (audit_log pattern reused)
+
+**Decision:** `token_usage_ledger` uses the same trigger-based
+append-only enforcement as `audit_log` (D-001.10). RLS no-policy is
+insufficient because `service_role` has `bypassrls=true`.
+
+### D-009.11 `agent_service_accounts` is GLOBAL (one row per agent type)
+
+**Decision:** A single row in `agent_service_accounts` per agent
+type, shared across all orgs. Every audit/ledger row carries the
+operated-on `organization_id` from the trigger event.
+
+**Alternative considered:** per-org service-account rows seeded at
+provisioning (D-004 amendment). Rejected to avoid amending D-004's
+provisioning flow.
+
+---

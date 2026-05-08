@@ -556,3 +556,95 @@ Format:
   these primitives without crashing. Tests assert behavior, not
   layout — no-ops are safe.
 - Anchor: `tests/setup-rtl.ts`.
+
+## single-llm-seam-via-gateway  (confidence: 1)
+
+- First seen: D-009
+- Description: Every LLM call (completion + embedding) goes through a
+  single `gateway.complete()` / `gateway.embed()` seam in
+  `src/lib/ai/gateway.ts`. Direct imports of provider SDKs anywhere
+  outside `src/lib/ai/providers/` are forbidden (Constitution VII
+  binding). The gateway owns: budget pre-check, ledger write,
+  fallback policy, request-id generation. Provider modules return a
+  normalized shape; the gateway maps to user-facing result codes.
+  D-014 hardening adds an ESLint rule + CI grep guard.
+- Anchor: `src/lib/ai/gateway.ts`,
+  `src/lib/ai/providers/{anthropic,openai}.ts`,
+  `baseline/115-model-gateway-contract.md`.
+
+## provider-fallback-with-typed-error-discrimination  (confidence: 1)
+
+- First seen: D-009
+- Description: Provider modules return a coarse-grained `error` code
+  (`rate_limit`/`server`/`network`/`auth`/`parse`/`unknown`). The
+  gateway's fallback rule: ONLY transient errors
+  (`rate_limit`/`server`/`network`) trigger a single retry to the
+  alternate provider. Auth/parse/unknown errors do NOT trigger
+  fallback (non-transient by nature). Single retry; no exponential
+  backoff in V0 — Inngest queue-level retry handles longer-term
+  outages.
+- Anchor: `src/lib/ai/gateway.ts` (`FALLBACK_TRIGGER_ERRORS` set),
+  `tests/lib/ai/gateway-complete.test.ts`.
+
+## append-only-ledger-via-trigger  (confidence: 2)
+
+- First seen: D-001 (audit_log)
+- Reinforced: D-009 (token_usage_ledger)
+- Description: To make a per-row log append-only on Supabase, use a
+  `BEFORE UPDATE/DELETE/TRUNCATE` trigger that raises an exception.
+  RLS no-policy is INSUFFICIENT because `service_role` has
+  `bypassrls=true` and most cluster-level writers (audit, ledger,
+  agent paths) use the service-role client. The trigger runs
+  regardless of RLS bypass.
+- Supersedes: an earlier tentative `append-only-via-rls-no-policy`
+  pattern proven false at D-001.
+- Anchor: `supabase/migrations/20260507120500_audit_log_triggers.sql`,
+  `supabase/migrations/20260508120100_token_usage_ledger.sql`.
+
+## agent-tier-ceiling-belt-and-suspenders  (confidence: 1)
+
+- First seen: D-009
+- Description: Agent tier ceilings (Constitution I — bounded
+  authority) are enforced at TWO layers: (a) runtime — `runAgent`
+  loads the service-account row and throws
+  `TierCeilingExceededError` if `attempted > max`; (b) DB —
+  `audit_log` BEFORE INSERT trigger joins `agent_service_accounts`
+  and rejects rows where `agent_tier > max_tier`. Layer (a) catches
+  normal call paths; layer (b) catches future bypasses (direct
+  service-role inserts, future agents that don't go through the
+  runtime). Same precedent as D-007.9 caller-org-filter pattern.
+- Anchor: `src/lib/agents/runtime.ts`,
+  `supabase/migrations/20260508120200_audit_log_agent_tier_check.sql`.
+
+## pii-masking-before-embedding  (confidence: 1)
+
+- First seen: D-009
+- Description: Embedding source text MUST go through a single helper
+  (`textOfRecord(node)`) that drops PII fields per-node-type via an
+  allowlist. The embedded text leaves the cluster via the OpenAI
+  API; the vector itself isn't reverse-decodable but the SOURCE TEXT
+  is what crosses the boundary. Phone-like and email-like patterns
+  are also masked inside the `label` field (sales reps occasionally
+  type phone-as-label). Agents that need PII for prompts (Lead
+  Enrichment) read `nodes.data` directly and document the trade-off
+  per-agent in baseline 115; their prompts instruct the model NOT
+  to echo PII in output.
+- Anchor: `src/lib/nodes/text.ts`,
+  `tests/lib/nodes/text.test.ts`,
+  `baseline/115-model-gateway-contract.md` §VIII.
+
+## inngest-event-emit-after-commit  (confidence: 1)
+
+- First seen: D-009 (`createLead` → `lead.created`)
+- Description: Domain helpers that should trigger downstream agents
+  / workflows emit Inngest events AFTER the DB commit succeeds.
+  Wrap `inngest.send(...)` in try/catch — failure to enqueue logs
+  but does NOT roll back the underlying mutation. The mutation is
+  persistent; the downstream work is async + retry-able. Inngest
+  functions consuming the event should be idempotent so at-least-
+  once delivery doesn't cause duplicate side-effects. The agent
+  itself checks pre-state ("skip if intent_score already set") to
+  enforce idempotency at the domain layer.
+- Anchor: `src/lib/leads/api.ts` (`createLead` emits),
+  `src/lib/inngest/functions/lead-enrichment.ts` (consumes),
+  `src/lib/agents/lead-enrichment.ts` (idempotent pre-check).

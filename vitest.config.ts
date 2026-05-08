@@ -28,7 +28,18 @@ export default defineConfig({
         "src/components/canvas/**",
         "src/lib/leads/**",
         "src/lib/cmdk/**",
+        "src/lib/ai/budget.ts",
+        "src/lib/ai/ledger.ts",
+        "src/lib/ai/gateway.ts",
+        "src/lib/ai/types.ts",
+        "src/lib/agents/**",
+        "src/lib/nodes/text.ts",
         "src/app/(dashboard)/dashboard/_actions/**",
+      ],
+      exclude: [
+        // Thin SDK boundary wrappers; tested indirectly via the
+        // gateway's fallback paths with provider mocks.
+        "src/lib/ai/providers/**",
       ],
       thresholds: {
         lines: 80,
