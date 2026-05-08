@@ -466,3 +466,93 @@ Format:
   than `environmentMatchGlobs` (removed in vitest 4.x). The vitest
   config also needs `@vitejs/plugin-react` for JSX/TSX transform.
 - Anchor: `tests/setup-rtl.ts`, `vitest.config.ts`.
+
+## bounded-command-catalog-literal  (confidence: 1)
+
+- First seen: D-008
+- Description: Surfaces that need a stable, discoverable list of
+  user-invokable commands (Cmd+K palettes, NL command bars,
+  copilot-style action menus) ship the catalog as an `as const` array
+  in a single TS file. Each entry has a stable kebab-case `id`, a
+  `kind` discriminator (`navigate`/`action`/`lookup-prefix`/
+  `placeholder` for V0; `nl-compile` for V1+), a per-kind payload
+  (target URL, action key, sub-mode prefix), and an optional
+  `requires[]` permission gate. The literal IS the compiled artifact
+  per Constitution X (NL-Compile-Then-Apply); free-form NL is a
+  later layer that compiles user input INTO this literal's IDs.
+  Tests assert ID uniqueness, group/kind/permission membership,
+  per-kind payload validity, kebab-case ID.
+- Anchor: `src/lib/cmdk/catalog.ts`, `src/lib/cmdk/types.ts`,
+  `tests/lib/cmdk/catalog.test.ts`.
+
+## permission-gated-command-visibility  (confidence: 1)
+
+- First seen: D-008
+- Description: A pure `visibleCommands(catalog, perms)` filter takes
+  the catalog literal + the user's resolved permission set and
+  returns the subset where every entry in `requires[]` is held.
+  Commands with no `requires` are always visible. Hide-don't-disable:
+  a permission-failing command is ABSENT from the rendered list, no
+  spinner, no tooltip — same precedent as D-001. Permissions resolved
+  ONCE per request server-side; serialized as `string[]` to the
+  Client palette via the layout's props bridge.
+- Anchor: `src/lib/cmdk/permissions.ts`,
+  `src/app/(dashboard)/layout.tsx`,
+  `tests/lib/cmdk/permissions.test.ts`.
+
+## dialog-state-via-react-context-provider  (confidence: 1)
+
+- First seen: D-008 (`NewLeadDialogProvider` lifted from D-007's
+  self-contained `<NewLeadDialog>`)
+- Description: When a dialog needs to open from multiple call sites
+  (Cmd+K command, page button, future toolbar), refactor the dialog
+  to a controlled component (`open` + `onOpenChange`) and mount it
+  ONCE inside a Context Provider at the route-group layout. The
+  Provider owns open state; consumers call
+  `useDialogContext().openDialog()` imperatively. Avoid event buses
+  (untyped + extra dep), URL state (bookmarkable open-state we don't
+  want), and module-level stores (no shared infrastructure justifies
+  it yet).
+- Anchor: `src/components/dashboard/new-lead-dialog-context.tsx`,
+  `src/app/(dashboard)/layout.tsx`,
+  `tests/components/dashboard/new-lead-dialog-context.test.tsx`.
+
+## lookup-prefix-submode-in-cmdk  (confidence: 1)
+
+- First seen: D-008
+- Description: For commands that need server-side fuzzy lookup
+  (Open lead by name…, Open deal by name…), use a two-mode palette:
+  `mode: 'catalog' | 'lookup'`. Selecting a `kind: 'lookup-prefix'`
+  command transitions to lookup mode; subsequent input drives a
+  debounced server-action search. Esc collapses back to catalog via
+  `onKeyDownCapture` + `stopPropagation` so the parent Dialog doesn't
+  close. Selecting a result navigates + closes. Debounce 200ms;
+  LIMIT 8; ORDER BY recency. ILIKE pattern with proper `% _ \\`
+  escaping. Operational reads are NOT audited.
+- Anchor: `src/components/cmdk/command-palette.tsx`,
+  `src/components/cmdk/lookup-results.tsx`,
+  `src/app/(dashboard)/dashboard/_actions/searchLeads.ts`.
+
+## ilike-escape-user-input  (confidence: 1)
+
+- First seen: D-008
+- Description: When interpolating user input into a PostgREST
+  `.ilike()` / `.or('label.ilike.%X%')` filter, escape LIKE-special
+  characters (`%`, `_`, `\`) with a leading backslash before wrapping
+  with `%`s. Otherwise a user typing `50%` would over-match every row
+  containing `50` followed by arbitrary characters. Defensive even
+  though Postgres-side injection is parameterized — this is about
+  user-intent semantics, not SQLi.
+- Anchor: `src/app/(dashboard)/dashboard/_actions/searchLeads.ts`
+  (`escaped = trimmed.replace(/[\\%_]/g, ...)`).
+
+## jsdom-polyfill-resizeobserver-and-scrollintoview  (confidence: 1)
+
+- First seen: D-008 (cmdk in jsdom)
+- Description: The `cmdk` library (and most Radix primitives) reach
+  for `ResizeObserver` and `Element.prototype.scrollIntoView` for
+  layout / focus management. Neither ships in jsdom. Define no-op
+  polyfills in `tests/setup-rtl.ts` so RTL component tests mount
+  these primitives without crashing. Tests assert behavior, not
+  layout — no-ops are safe.
+- Anchor: `tests/setup-rtl.ts`.

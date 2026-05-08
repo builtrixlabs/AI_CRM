@@ -676,3 +676,103 @@ Closed before commit; rescan went clean.
 - [tests/integration/lead-create-edit-transition.test.ts](../tests/integration/lead-create-edit-transition.test.ts) cross-tenant integration
 
 ---
+
+## 2026-05-08 — D-008 Cmd+K bounded catalog
+
+### D-008.1 Bounded catalog (literal-of-30); free-form NL is V1
+
+**Decision:** D-008 ships `src/lib/cmdk/catalog.ts` as an `as const`
+literal of exactly 30 commands. Each entry has a stable `id`, a
+`kind` discriminator (`navigate`/`action`/`lookup-prefix`/`placeholder`),
+and an optional `requires[]` permission gate. New commands require an
+amendment directive; runtime additions are V1+ (Constitution XI L3).
+
+**Why:** Constitution X — NL-Compile-Then-Apply. The catalog IS the
+compiled artifact. Free-form NL ("show me hot leads in Whitefield")
+needs the Model Gateway (D-009) + DOE engine (D-011). Shipping a
+bounded literal now gives users muscle memory + a stable shortcut
+surface that future NL UX can defer to.
+
+### D-008.2 cmdk locked as the command-bar lib (PRD §6.3-binding)
+
+**Decision:** `cmdk` is the only command-bar implementation in the
+repo. Custom keyboard navigation, fuzzy match, and group rendering
+are not re-implemented.
+
+**Side-effects:** jsdom doesn't ship `ResizeObserver` or
+`Element.prototype.scrollIntoView`; both polyfilled in
+`tests/setup-rtl.ts`.
+
+### D-008.3 Cmd+K mounted on `(dashboard)/*` only in V0
+
+**Decision:** The CommandPalette + NewLeadDialogProvider mount in
+`src/app/(dashboard)/layout.tsx`. Routes outside `(dashboard)/*`
+(admin, platform, settings) do not get Cmd+K in V0. V1 hoists the
+provider to the root layout.
+
+### D-008.4 NewLeadDialog open-state lifted to a React Context Provider
+
+**Decision:** The previously self-contained `<NewLeadDialog>` (D-007)
+gains a controlled `open` prop. A `NewLeadDialogProvider` mounts the
+dialog ONCE at layout level and exposes `useNewLeadDialog()` so any
+descendant — the dashboard's "+ New lead" trigger button, the Cmd+K
+"Create new lead" command — can call `openDialog()` imperatively.
+
+**Alternatives considered:**
+- Event bus (mitt). Rejected — extra dep, untyped.
+- Module-level store (zustand). Rejected — no existing infrastructure.
+- URL state. Rejected — bookmarkable open-state isn't a goal.
+
+### D-008.5 Placeholder commands navigate to `/dashboard/placeholder/<slug>` stubs
+
+**Decision:** Forward-pointer commands (filtered list views, deal /
+contact canvases, today's site visits, in-app feedback) navigate to a
+single `/dashboard/placeholder/[slug]` Server-Component route that
+validates `slug` against `PLACEHOLDER_SLUGS` and renders a
+forward-link banner.
+
+**Why:** Same precedent as D-005's placeholder cards. Discoverability
+NOW; muscle memory builds before the real surface lands. Toast was
+the alternative — rejected because toasts disappear, while a
+dedicated route can be linked to and bookmarked.
+
+### D-008.6 No `read_sensitive` audit on Cmd+K lookup-search
+
+**Decision:** `searchLeads` is operational-tier — the user's own
+workspace, ≤ 8 results, label + first-line phone. No `audit_log` row
+written. Same precedent as D-004.4 / D-006.4.
+
+### D-008.7 Hotkey preventDefault only when NOT in editable elements
+
+**Decision:** `useCmdkHotkey` listens at the document level for
+`Cmd/Ctrl+K` but suppresses the action when the focused element is
+`<input>`, `<textarea>`, `<select>`, or `[contenteditable]`.
+
+**Why:** Browser default `Cmd+K` is focus-address-bar; we override,
+but only when the user isn't editing. Cost of a misfire (palette opens
+while typing) is high; cost of a non-fire (use mouse) is low.
+
+### D-008.8 RSC split — `searchLeadsByClient` for tests, `searchLeads` for production
+
+**Decision:** `searchLeads` (the server action) gates on auth +
+permission then delegates to `searchLeadsByClient` (a pure helper
+that takes any authenticated client + runs the SELECT). Integration
+tests inject an authenticated client into `searchLeadsByClient`
+directly — verify RLS without the cookie-based `getCurrentUser`.
+
+### D-008.9 LIKE-special-char escaping in `searchLeads`
+
+**Decision:** Before interpolating user input into the PostgREST
+ILIKE filter, escape `%`, `_`, and `\` with a leading backslash.
+Without this, a user typing "50%" would match every lead containing
+"50" plus arbitrary characters.
+
+**Anchor:** [src/app/(dashboard)/dashboard/_actions/searchLeads.ts](../src/app/(dashboard)/dashboard/_actions/searchLeads.ts)
+
+### D-008.10 Stacked PR off feature/007 while D-006 + D-007 PRs are open
+
+**Decision:** D-008's branch (`feature/008-cmdk-bounded-catalog`)
+branched off `feature/007-lead-lifecycle`. PR targets that branch;
+retarget to `v1` after D-006 → D-007 merge train clears.
+
+---
