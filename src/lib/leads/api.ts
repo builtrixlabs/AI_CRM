@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createNode, NodeValidationError } from "@/lib/nodes/api";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { inngest } from "@/lib/inngest/client";
 import { createLeadInputSchema, type CreateLeadInput } from "./schemas";
 import {
   TERMINAL_STATES,
@@ -36,7 +37,7 @@ export async function createLead(
   const data = parsed.data;
   const { label: dataLabel, ...rest } = data;
   const label = args.label ?? dataLabel ?? data.phone;
-  return createNode(
+  const result = await createNode(
     {
       organization_id: args.organization_id,
       workspace_id: args.workspace_id,
@@ -49,6 +50,28 @@ export async function createLead(
     },
     client,
   );
+
+  // Best-effort `lead.created` event for the Lead Enrichment Agent
+  // (D-009). Failure to enqueue does NOT roll back the lead — the
+  // node is persistent; enrichment is async + retry-able.
+  try {
+    await inngest.send({
+      name: "lead.created",
+      data: {
+        lead_id: result.id,
+        organization_id: args.organization_id,
+        workspace_id: args.workspace_id,
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[createLead] inngest.send(lead.created) failed",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  return result;
 }
 
 export type TransitionLeadArgs = {

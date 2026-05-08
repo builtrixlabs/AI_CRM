@@ -1,4 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+
+const sendMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@/lib/inngest/client", () => ({
+  inngest: { send: sendMock },
+}));
+
 import { createLead, transitionLead } from "@/lib/leads/api";
 import { IllegalTransitionError } from "@/lib/leads/transitions";
 
@@ -53,6 +59,7 @@ const ACTOR = "33333333-4444-4555-8666-777777777777";
 
 describe("createLead", () => {
   it("inserts a lead node with state='new' and writes one audit row", async () => {
+    sendMock.mockClear();
     const t = makeClientForCreate();
     const result = await createLead(
       {
@@ -123,6 +130,47 @@ describe("createLead", () => {
     ).rejects.toThrow();
     expect(t.insertedNodes).toHaveLength(0);
     expect(t.insertedAudit).toHaveLength(0);
+  });
+
+  it("emits a lead.created Inngest event after successful insert (D-009 wiring)", async () => {
+    sendMock.mockClear();
+    const t = makeClientForCreate();
+    const result = await createLead(
+      {
+        organization_id: ORG,
+        workspace_id: WS,
+        created_by: ACTOR,
+        data: { phone: "+91-9000000000", source: "walkin" },
+      },
+      t.client as never,
+    );
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock.mock.calls[0]![0]).toEqual({
+      name: "lead.created",
+      data: {
+        lead_id: result.id,
+        organization_id: ORG,
+        workspace_id: WS,
+      },
+    });
+  });
+
+  it("does NOT roll back the lead when inngest.send fails (best-effort)", async () => {
+    sendMock.mockClear();
+    sendMock.mockRejectedValueOnce(new Error("inngest down"));
+    const t = makeClientForCreate();
+    const result = await createLead(
+      {
+        organization_id: ORG,
+        workspace_id: WS,
+        created_by: ACTOR,
+        data: { phone: "+91-9000000000", source: "walkin" },
+      },
+      t.client as never,
+    );
+    expect(result.id).toBeTruthy();
+    expect(t.insertedNodes).toHaveLength(1);
+    expect(t.insertedAudit).toHaveLength(1);
   });
 });
 
