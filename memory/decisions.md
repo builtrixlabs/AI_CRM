@@ -1249,3 +1249,50 @@ email verification + bcrypt + audit. Cardinal sin per
 Constitution VII (stack discipline + Supabase Auth).
 
 ---
+
+## 2026-05-08 — Hotfix: middleware MIDDLEWARE_INVOCATION_FAILED
+
+### HF-1 Middleware must NEVER throw (Vercel contract)
+
+**Decision:** `src/middleware.ts` is contractually obligated to
+return a `Response` for every request, even when configuration is
+broken. Any thrown exception in middleware becomes Vercel's
+opaque `MIDDLEWARE_INVOCATION_FAILED` 500, which is undebuggable
+without reading deploy logs.
+
+**Trigger:** First Vercel deploy of v1 returned
+`MIDDLEWARE_INVOCATION_FAILED` on every page. Root cause:
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+were not set on the Vercel project. `@supabase/ssr`'s
+`createServerClient(url, key, ...)` throws synchronously when
+either argument is empty (message:
+"Your project's URL and Key are required to create a Supabase client!").
+
+**Fix:**
+1. `envConfigError()` runs first in middleware. Missing env vars
+   → return a 500 whose body names the variable + the operator
+   action (set on Vercel → redeploy).
+2. The Supabase-client construction is wrapped in `try/catch` so
+   future SDK throws (malformed JWT, network blip during refresh)
+   degrade to "no session" — the user is bounced to
+   `/auth/sign-in` instead of seeing a 500.
+
+**Pinned by:** `tests/middleware/env-validation.test.ts` — 6 tests
+covering each missing-var case + the must-not-throw invariant.
+Verified by reverting the fix: 4 of 6 fail without it.
+
+### HF-2 Why local-dev success != Vercel-prod success
+
+**Decision:** Going forward, treat "local `npm run dev`" as
+necessary-but-insufficient for deploy readiness. The deploy gate
+is a fresh `npm run build` + `npm run start` with `.env*` files
+moved aside — that's the closest local approximation of a fresh
+Vercel container.
+
+**Lesson:** The 2026-05-08 deploy passed `npm run dev` with
+`.env.local` populated, but Vercel's first request hit a
+`MIDDLEWARE_INVOCATION_FAILED` because Vercel doesn't read
+`.env.local`. The unit-level regression locked in by HF-1's test
+catches this at CI-time, not at-deploy time.
+
+---

@@ -168,7 +168,7 @@ service_role has `bypassrls=true`).
 
 ## 6. Test/coverage status
 
-- Unit (vitest): 591 tests passing (D-014 baseline).
+- Unit (vitest): 597 tests passing (post-D-014 + middleware env regression).
 - Integration (vitest.integration.config.ts): runs against the
   live test DB; not gated in CI for the worktree run but
   exercised pre-merge.
@@ -178,7 +178,39 @@ service_role has `bypassrls=true`).
 
 ---
 
-## 7. Open V1 follow-ups (deferred from V0)
+## 7. Vercel — required environment variables
+
+**Critical:** missing env vars on the deploy target cause the middleware
+to fail at request time (regression: `MIDDLEWARE_INVOCATION_FAILED` on
+the 2026-05-08 first deploy). Set ALL of these in
+**Vercel → Project Settings → Environment Variables → Production**
+before promoting the deploy:
+
+| Variable | Source | Why |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard → Project Settings → API | **load-bearing for middleware** |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase dashboard → API → anon key | **load-bearing for middleware** |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → API → service role | server-only writes (audit_log, agents) |
+| `DATABASE_URL` | Supabase dashboard → Database → connection string | scripts/seed scripts |
+| `ANTHROPIC_API_KEY` | console.anthropic.com | D-009 Lead Enrichment Agent |
+| `OPENAI_API_KEY` | platform.openai.com | D-009 fallback + embeddings |
+| `WHATSAPP_WEBHOOK_SECRET` | any 32+ char random string | D-010 HMAC verify |
+| `BUILTRIX_EVENT_INBOX_SECRET` | any 32+ char random string | D-013 HMAC verify |
+
+If `NEXT_PUBLIC_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+is missing, every page returns a 500 whose body names the missing
+variable (no `MIDDLEWARE_INVOCATION_FAILED`). The "must not throw"
+contract is pinned by [tests/middleware/env-validation.test.ts](../tests/middleware/env-validation.test.ts).
+
+Also enable the Auth Hook in Supabase → Authentication → Hooks →
+"Custom Access Token" → function `public.custom_access_token_hook`
+(installed by [migration 20260507120100](../supabase/migrations/20260507120100_users_and_auth.sql)). Without it, JWTs
+won't carry `organization_id` / `base_role` claims and RLS denies
+everything.
+
+---
+
+## 8. Open V1 follow-ups (deferred from V0)
 
 - Real outbound WhatsApp send (D-010 ships intake only; D-016
   parked).
