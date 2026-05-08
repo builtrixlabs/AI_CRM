@@ -38,7 +38,9 @@ export default defineConfig({
         "src/lib/doe/**",
         "src/lib/sitevisits/**",
         "src/lib/events/**",
+        "src/lib/secrets/**",
         "src/app/(dashboard)/dashboard/_actions/**",
+        "src/app/(platform)/platform/settings/secrets/**",
       ],
       exclude: [
         // Thin SDK boundary wrappers; tested indirectly via the

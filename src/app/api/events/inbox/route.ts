@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyWhatsAppSignature } from "@/lib/webhooks/whatsapp/signature";
 import { dispatchInboxEvent, recordInboxIngestion } from "@/lib/events/inbox";
+import { getSecret } from "@/lib/secrets/getSecret";
 import type { BuiltrixEvent } from "@/lib/events/types";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ const SIGNATURE_HEADER = "x-builtrix-signature";
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const sig = req.headers.get(SIGNATURE_HEADER);
   const raw = await req.text();
-  const secret = process.env.BUILTRIX_EVENT_INBOX_SECRET ?? "";
+  const secret = (await getSecret("builtrix_event_inbox_secret")) ?? "";
 
   if (!verifyWhatsAppSignature(raw, sig, secret)) {
     return NextResponse.json(

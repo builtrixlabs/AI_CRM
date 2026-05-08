@@ -1,7 +1,11 @@
 # Directive 016 — Super-admin AI provider configuration UI
 
 **Kind:** feature
-**Status:** PARKED — DO NOT START until V0 (D-001..D-015) is fully shipped + the V0 pilot (D-015) is live.
+**Status:** SHIPPED 2026-05-08 — un-parked after the Vercel-deploy
+hotfix exposed the cost of env-var-only secret management.
+Implementation: `src/lib/secrets/**` +
+`src/app/(platform)/platform/settings/secrets/**`.
+Migration: `supabase/migrations/20260508170000_platform_secrets.sql`.
 **Created:** 2026-05-08
 **Source:** Operator request (post-D-009 merge to v1)
 **Authority:** memory/constitution.md (Principles I, II, IV, VII)

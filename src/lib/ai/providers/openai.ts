@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getSecret } from "@/lib/secrets/getSecret";
 import type {
   ProviderCompleteResult,
   ProviderEmbedResult,
@@ -8,13 +9,17 @@ export const OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini";
 export const OPENAI_DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 let cachedClient: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (cachedClient) return cachedClient;
-  const apiKey = process.env.OPENAI_API_KEY;
+let cachedKey: string | null = null;
+async function getClient(): Promise<OpenAI> {
+  const apiKey = await getSecret("openai_api_key");
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set");
+    throw new Error(
+      "OpenAI API key is not configured. Set it in /platform/settings/secrets or via OPENAI_API_KEY env var."
+    );
   }
+  if (cachedClient && cachedKey === apiKey) return cachedClient;
   cachedClient = new OpenAI({ apiKey });
+  cachedKey = apiKey;
   return cachedClient;
 }
 
@@ -50,7 +55,7 @@ export type OpenAICompleteImpl = (
 ) => Promise<ProviderCompleteResult>;
 
 export const completeWithOpenAI: OpenAICompleteImpl = async (args) => {
-  const client = getClient();
+  const client = await getClient();
   const model = args.model ?? OPENAI_DEFAULT_CHAT_MODEL;
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   if (args.system) messages.push({ role: "system", content: args.system });
@@ -91,7 +96,7 @@ export type OpenAIEmbedImpl = (
 ) => Promise<ProviderEmbedResult>;
 
 export const embedWithOpenAI: OpenAIEmbedImpl = async (args) => {
-  const client = getClient();
+  const client = await getClient();
   const model = args.model ?? OPENAI_DEFAULT_EMBEDDING_MODEL;
   try {
     const response = await client.embeddings.create({

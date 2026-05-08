@@ -4,6 +4,7 @@ import { verifyWhatsAppSignature } from "@/lib/webhooks/whatsapp/signature";
 import { upsertActivityFromWhatsApp } from "@/lib/webhooks/whatsapp/ingest";
 import { recordIngestion } from "@/lib/webhooks/whatsapp/log";
 import { maskPii } from "@/lib/nodes/text";
+import { getSecret } from "@/lib/secrets/getSecret";
 import type { WhatsAppInboundPayload } from "@/lib/webhooks/whatsapp/types";
 
 export const runtime = "nodejs";
@@ -33,8 +34,9 @@ async function resolveOrgFromHeader(
   return data as ResolvedOrg;
 }
 
-function rawSecretFromEnv(): string {
-  return process.env.WHATSAPP_WEBHOOK_SECRET ?? "";
+async function resolveWebhookSecret(): Promise<string> {
+  const v = await getSecret("whatsapp_webhook_secret");
+  return v ?? "";
 }
 
 /**
@@ -54,9 +56,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const orgHeader = req.headers.get(ORG_HEADER);
   const raw = await req.text();
 
-  // V0 keeps it simple: a single platform-wide secret (env). D-016 will
-  // move per-org secrets into org_whatsapp_endpoints.secret_sha256.
-  const platformSecret = rawSecretFromEnv();
+  // Single platform-wide secret. Resolved via getSecret(), which reads
+  // platform_secrets first (set in /platform/settings/secrets) and
+  // falls back to WHATSAPP_WEBHOOK_SECRET env var.
+  const platformSecret = await resolveWebhookSecret();
   if (!verifyWhatsAppSignature(raw, sig, platformSecret)) {
     return NextResponse.json(
       { ok: false, error: "invalid_signature" },

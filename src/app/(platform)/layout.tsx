@@ -10,6 +10,7 @@ const NAV = [
   { href: "/platform/costs", label: "Costs" },
   { href: "/platform/tickets", label: "Tickets" },
   { href: "/platform/settings", label: "Settings" },
+  { href: "/platform/settings/secrets", label: "Secrets" },
 ];
 
 export default function PlatformLayout({

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { getSecret } from "@/lib/secrets/getSecret";
 import type {
   ProviderCompleteResult,
 } from "../types";
@@ -6,14 +7,21 @@ import type {
 /** Default model. Documented in baseline 115. */
 export const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6";
 
+// Per-key cache: rebuild the SDK client only when the key changes.
+// Rotations via /platform/settings/secrets call invalidateSecretCache,
+// so the next call lands a different key and we rebuild.
 let cachedClient: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (cachedClient) return cachedClient;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+let cachedKey: string | null = null;
+async function getClient(): Promise<Anthropic> {
+  const apiKey = await getSecret("anthropic_api_key");
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not set");
+    throw new Error(
+      "Anthropic API key is not configured. Set it in /platform/settings/secrets or via ANTHROPIC_API_KEY env var."
+    );
   }
+  if (cachedClient && cachedKey === apiKey) return cachedClient;
   cachedClient = new Anthropic({ apiKey });
+  cachedKey = apiKey;
   return cachedClient;
 }
 
@@ -59,7 +67,7 @@ function classifyError(err: unknown): ProviderCompleteResult {
  * override) rather than mocking this module directly.
  */
 export const completeWithAnthropic: AnthropicCompleteImpl = async (args) => {
-  const client = getClient();
+  const client = await getClient();
   const model = args.model ?? ANTHROPIC_DEFAULT_MODEL;
   try {
     const message = await client.messages.create({

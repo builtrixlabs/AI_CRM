@@ -1296,3 +1296,68 @@ Vercel container.
 catches this at CI-time, not at-deploy time.
 
 ---
+
+## 2026-05-08 — D-016 Super-admin secret management (un-parked)
+
+### D-016.1 platform_secrets table — DB-first resolution, env fallback
+
+**Decision:** Provider API keys + webhook signing secrets are now
+configurable in-app at `/platform/settings/secrets` (super_admin only)
+and persisted in `platform_secrets`. Resolution order at runtime
+via `getSecret(kind)`:
+
+  1. `platform_secrets.value` — UI-set value
+  2. `process.env[<env_name>]` — Vercel fallback (used at boot
+     before super_admin first logs in)
+  3. `null` — caller decides (webhooks reject, gateway throws with
+     a message pointing to the UI)
+
+**Why now:** Operator request after the 2026-05-08 Vercel deploy
+exposed the friction of env-var-only secrets — rotating
+`ANTHROPIC_API_KEY` via Vercel UI requires a redeploy, and there
+is no audit trail of who changed what. The DB-first path lets
+super_admin rotate without touching Vercel.
+
+### D-016.2 Raw value never leaves the DB
+
+**Decision:** The UI never round-trips the raw secret back to the
+client. Three layers enforce this:
+
+  1. `platform_secrets_redacted` view exposes only `kind`, `last4`,
+     `rotated_at` to authenticated SELECTs. RLS on the base table
+     blocks direct reads from authenticated callers.
+  2. `listSecretStatus()` returns `RedactedSecret[]` — the type
+     literally has no `value` field.
+  3. The set-form is `<input type="password" autoComplete="new-password">`
+     with no GET path. The form input clears on success; the page
+     re-renders with the new last4.
+
+### D-016.3 Audit row records the rotation, NOT the value
+
+**Decision:** Every `setSecret` call writes one `audit_log` row
+with `action='platform_secret_rotated'`, `actor_role='super_admin'`,
+`diff: {kind, rotated_at}`. The raw value (or last4) is NOT in
+the diff. Constitution IV says audit rows are evidence-grade, but
+"who rotated what kind, when" is sufficient evidence. Storing the
+last4 in audit would let an attacker with audit-read access guess
+keys faster.
+
+### D-016.4 30-second in-memory cache, busted on rotation
+
+**Decision:** `getSecret` caches the resolved value for 30 seconds
+in module-local memory. Cache key is the `kind`. Rotation calls
+`invalidateSecretCache(kind)` so the next request lands a fresh
+read. 30s is the longest a stale value persists after a rotation;
+shorter would hammer the DB on every Anthropic call.
+
+### D-016.5 No `import "server-only"` on the secrets module
+
+**Decision:** Removed `import "server-only"` from
+`src/lib/secrets/getSecret.ts` because it broke vitest test runs
+that load the module transitively via `src/lib/ai/providers/*`.
+Server-only protection comes from `getSupabaseAdmin()` — the
+admin client has its own browser-import guard
+(`if (typeof window !== "undefined") throw ...`) which fires
+before any value can leak to a client bundle.
+
+---
