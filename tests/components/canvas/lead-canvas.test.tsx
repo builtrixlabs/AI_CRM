@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+
+vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
+  createLeadAction: vi.fn(),
+  updateLeadAction: vi.fn(),
+  transitionLeadAction: vi.fn(),
+}));
+
 import { LeadCanvas } from "@/components/canvas/lead-canvas";
 import { DEMO_LEAD, DEMO_ACTIVITIES } from "@/lib/canvas/fixture";
 import type { CanvasLead } from "@/lib/canvas/types";

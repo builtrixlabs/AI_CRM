@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { getLeadCanvas } from "@/lib/canvas/api";
 import { LeadCanvas } from "@/components/canvas/lead-canvas";
+import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { resolveForUser } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +12,18 @@ export default async function LeadCanvasPage(props: {
   const { id } = await props.params;
   const data = await getLeadCanvas(id);
   if (!data) notFound();
-  return <LeadCanvas lead={data.lead} initialActivities={data.activities} />;
+
+  const user = await getCurrentUser();
+  const perms = user ? resolveForUser(user) : new Set<string>();
+  const canEdit = perms.has("leads:edit" as never);
+  const canTransition = canEdit;
+
+  return (
+    <LeadCanvas
+      lead={data.lead}
+      initialActivities={data.activities}
+      canEdit={canEdit}
+      canTransition={canTransition}
+    />
+  );
 }

@@ -357,6 +357,100 @@ Format:
 - Anchor: `src/lib/canvas/api.ts`, `src/lib/canvas/channel.ts`,
   `src/components/canvas/realtime.ts`.
 
+## state-machine-as-pure-record  (confidence: 1)
+
+- First seen: D-007
+- Description: Domain state machines (lead lifecycle, deal pipeline,
+  document workflow) are encoded as
+  `Readonly<Record<S, readonly S[]>>` literal in a
+  `src/lib/<domain>/transitions.ts` module, paired with
+  `allowedTransitions(s)`, `isTerminal(s)`, and
+  `assertTransitionAllowed(from, to)` pure helpers (`assert*` throws a
+  typed `Illegal*Error`). Tests cover every (from, to) pair via a
+  matrix loop so adding a new state mechanically extends coverage.
+  No DB CHECK constraint — the audit log is the regulator's view.
+- Anchor: `src/lib/leads/transitions.ts`,
+  `tests/lib/leads/transitions.test.ts`.
+
+## terminal-transition-requires-reason  (confidence: 1)
+
+- First seen: D-007
+- Description: Zod transition schemas use `.superRefine` to require a
+  non-empty `reason` field iff the `target_state` is in the
+  `TERMINAL_STATES` set. Forward transitions don't require a reason.
+  This pattern matches RERA-style audit expectations: the audit log
+  always carries `{ from, to }`; for terminal moves, also `{ reason }`.
+  The UI's transition footer encodes the same split — forward buttons
+  fire the action directly; terminal buttons open a reason sub-dialog.
+- Anchor: `src/lib/leads/schemas.ts` (`transitionInputSchema`),
+  `src/components/canvas/transition-footer.tsx`.
+
+## domain-helper-with-distinct-audit-shape  (confidence: 1)
+
+- First seen: D-007 (`transitionLead` vs D-002's `updateNodeData`)
+- Description: When two write paths against the same table need
+  different audit-log diff shapes (e.g. `{ before, after }` for full
+  updates vs `{ from, to, reason? }` for state changes), give each its
+  own helper instead of widening one helper to carry both shapes.
+  Encapsulate in `src/lib/<domain>/api.ts` so the audit-shape choice is
+  obvious at the call site. An integration test asserts the diff shape
+  end-to-end against the real DB.
+- Anchor: `src/lib/leads/api.ts` (`transitionLead`),
+  `tests/integration/lead-create-edit-transition.test.ts`.
+
+## server-action-result-discriminated-union  (confidence: 1)
+
+- First seen: D-007
+- Description: Server Actions return a discriminated union
+  `{ ok: true; data? } | { ok: false; error: 'permission' | 'validation' | 'unknown'; fieldErrors?; message? }`
+  rather than throwing. Callers `switch (result.error)` to render the
+  right inline UI (permission banner, per-field error map, form-level
+  error). Keeps the action contract typed without exceptions crossing
+  the RSC boundary. `IllegalTransitionError` (from a domain helper)
+  is mapped to `{ error: 'validation' }` at the action layer.
+- Anchor: `src/app/(dashboard)/dashboard/_actions/leads.ts`,
+  `tests/app/dashboard/_actions/leads.test.ts`.
+
+## whole-surface-edit-mode-toggle  (confidence: 1)
+
+- First seen: D-007 (LeadCanvas)
+- Description: Operational surfaces start with a clear "Edit" button at
+  the top; clicking it swaps the read-only Header + Field block for an
+  editable form rendered in the same section slot. Activity Stream and
+  forward sections continue to render. The component-local `editing`
+  state is the single bit driving the swap; no per-field hover affordance,
+  no inline click-to-edit. Per-field inline is V1 once usage tells us
+  which fields actually deserve the optimization.
+- Anchor: `src/components/canvas/lead-canvas.tsx` (`editing` state +
+  EditModeButton/EditLeadForm switch),
+  `tests/components/canvas/lead-canvas-extras.test.tsx`.
+
+## caller-org-filter-on-service-role-mutation  (confidence: 2)
+
+- First seen: D-007 (caught by Gate-4 security scan as a CRITICAL IDOR
+  before merge; closed in the same gate)
+- Description: Any server action that mutates a tenant-owned row via
+  the service-role admin client (which bypasses RLS) MUST prove the
+  row belongs to the caller's `organization_id` BEFORE the mutation.
+  Two viable patterns: (a) **helper-internal** — make the helper
+  require `caller_org_id` as a non-optional argument so TypeScript
+  enforces it at every call site, and have the helper's SELECT chain
+  filter by `organization_id`; (b) **action-layer pre-check** — add a
+  small `assertLeadInTenant`-style helper that does a filtered SELECT
+  and returns null on mismatch, then the action returns the same
+  "validation: not found" shape as a genuine missing row (no
+  existence leak). Pattern (a) is preferred for new helpers; pattern
+  (b) is the right escape hatch when the underlying mutator (e.g.
+  D-002's `updateNodeData`) cannot be widened. Both paths emit the
+  IDENTICAL action result for genuine-missing and cross-tenant —
+  confirmed by tests so we can't accidentally leak existence later.
+- Anchor: `src/lib/leads/api.ts` (`transitionLead` requires
+  `caller_org_id`), `src/app/(dashboard)/dashboard/_actions/leads.ts`
+  (`assertLeadInTenant` pre-check),
+  `tests/lib/leads/api.test.ts` (cross-tenant unit test),
+  `tests/integration/lead-create-edit-transition.test.ts`
+  (cross-tenant integration test).
+
 ## rtl-vitest-setup-with-env-stub  (confidence: 1)
 
 - First seen: D-006
