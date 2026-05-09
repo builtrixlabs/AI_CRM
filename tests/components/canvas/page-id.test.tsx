@@ -23,6 +23,10 @@ vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
   updateLeadAction: vi.fn(),
   transitionLeadAction: vi.fn(),
 }));
+// D-020 — CustomFieldsBlock pulls in service-role admin client, mock it here.
+vi.mock("@/components/canvas/custom-fields-block", () => ({
+  CustomFieldsBlock: () => null,
+}));
 
 import LeadCanvasPage from "@/app/(dashboard)/dashboard/leads/[id]/page";
 import { DEMO_ACTIVITIES, DEMO_LEAD } from "@/lib/canvas/fixture";
