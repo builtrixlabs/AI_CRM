@@ -7,6 +7,7 @@ import {
   type AgentResult,
 } from "./types";
 import { withinCeiling } from "./registry";
+import { effectiveMaxTier, getOrgAgentConfig } from "./admin";
 import type { AgentTier } from "@/lib/ai/types";
 
 export type AgentDeps = {
@@ -79,11 +80,30 @@ export async function runAgent(
     };
   }
 
-  if (!withinCeiling(inv.attempted_tier, agent.max_tier)) {
+  // D-019: per-org config layer. If the org has provisioned this agent
+  // and suspended it, refuse. If they've set a max_tier_override, the
+  // effective ceiling is `min(global, override)`.
+  const orgConfig = await getOrgAgentConfig(
+    inv.organization_id,
+    agent.agent_type,
+    client,
+  );
+  if (orgConfig && !orgConfig.enabled) {
+    return {
+      ok: false,
+      error: "validation",
+      message: `agent ${agent.agent_type} suspended for this org`,
+    };
+  }
+  const effectiveCeiling = effectiveMaxTier(
+    agent.max_tier,
+    orgConfig?.max_tier_override ?? null,
+  );
+  if (!withinCeiling(inv.attempted_tier, effectiveCeiling)) {
     throw new TierCeilingExceededError(
       inv.agent_id,
       inv.attempted_tier,
-      agent.max_tier,
+      effectiveCeiling,
     );
   }
 
