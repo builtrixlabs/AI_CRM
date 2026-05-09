@@ -13,6 +13,7 @@ const SURFACES = {
   admin: "/admin",
   settings: "/settings",
   dashboard: "/dashboard",
+  cp: "/cp",
 } as const;
 
 const isUnder = (path: string, prefix: string) =>
@@ -33,6 +34,8 @@ const landingFor = (user: CurrentUser): string => {
     case "org_owner":
     case "org_admin":
       return SURFACES.admin;
+    case "channel_partner":
+      return SURFACES.cp;
     default:
       return SURFACES.dashboard;
   }
@@ -92,11 +95,32 @@ export function decideRoute(
     return { kind: "redirect", target: SURFACES.admin };
   }
 
-  // Operational roles: workspace_admin, manager, sales_rep, read_only, channel_partner
+  // Channel partners: own dedicated /cp surface + read-only /dashboard.
+  if (role === "channel_partner") {
+    if (isUnder(pathname, SURFACES.platform)) {
+      return { kind: "redirect", target: SURFACES.cp };
+    }
+    if (isUnder(pathname, SURFACES.admin) || isUnder(pathname, SURFACES.settings)) {
+      return { kind: "redirect", target: SURFACES.cp };
+    }
+    if (
+      isUnder(pathname, SURFACES.cp) ||
+      isUnder(pathname, SURFACES.dashboard) ||
+      isApi(pathname)
+    ) {
+      return { kind: "allow" };
+    }
+    return { kind: "redirect", target: SURFACES.cp };
+  }
+
+  // Other operational roles: workspace_admin, manager, sales_rep, read_only
   if (isUnder(pathname, SURFACES.platform)) {
     return { kind: "redirect", target: SURFACES.dashboard };
   }
   if (isUnder(pathname, SURFACES.admin) || isUnder(pathname, SURFACES.settings)) {
+    return { kind: "redirect", target: SURFACES.dashboard };
+  }
+  if (isUnder(pathname, SURFACES.cp)) {
     return { kind: "redirect", target: SURFACES.dashboard };
   }
   if (isUnder(pathname, SURFACES.dashboard) || isApi(pathname)) {

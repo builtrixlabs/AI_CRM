@@ -107,14 +107,30 @@ describe("decideRoute — channel_partner (AC-6)", () => {
       kind: "allow",
     });
   });
-  it("channel_partner on /admin → /dashboard", () => {
+  it("channel_partner on /admin → /cp (D-221)", () => {
     expect(decideRoute(u("channel_partner"), "/admin")).toEqual({
       kind: "redirect",
-      target: "/dashboard",
+      target: "/cp",
     });
   });
-  it("channel_partner on /platform → /dashboard", () => {
+  it("channel_partner on /platform → /cp (D-221)", () => {
     expect(decideRoute(u("channel_partner"), "/platform")).toEqual({
+      kind: "redirect",
+      target: "/cp",
+    });
+  });
+  it("channel_partner on /cp is allowed (D-221)", () => {
+    expect(decideRoute(u("channel_partner"), "/cp")).toEqual({
+      kind: "allow",
+    });
+  });
+  it("channel_partner on /cp/submit is allowed (D-221)", () => {
+    expect(decideRoute(u("channel_partner"), "/cp/submit")).toEqual({
+      kind: "allow",
+    });
+  });
+  it("non-CP operational role on /cp → /dashboard (D-221)", () => {
+    expect(decideRoute(u("sales_rep"), "/cp")).toEqual({
       kind: "redirect",
       target: "/dashboard",
     });
