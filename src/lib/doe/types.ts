@@ -12,7 +12,12 @@ export type TriggerKind =
   | "cp.lead_submitted"
   | "mih.lead_pushed"
   | "legal.flag_raised"
-  | "call.objection_detected";
+  | "call.objection_detected"
+  // D-131 — Voice IQ lean follow-up events
+  | "call.bant_extracted"
+  | "lead.intent_changed"
+  | "call.compliance_flag"
+  | "call.next_best_action";
 
 export type ActionKind =
   | "enqueue_agent"
