@@ -4,8 +4,8 @@ import { COMMAND_GROUPS, COMMAND_KINDS, ACTION_KEYS } from "@/lib/cmdk/types";
 import { PERMISSIONS } from "@/lib/auth/rbac";
 
 describe("COMMANDS catalog", () => {
-  it("ships exactly 31 commands (V0 base 30 + nav-admin-directives from D-017)", () => {
-    expect(COMMANDS.length).toBe(31);
+  it("ships exactly 34 commands (V0 base 30 + 4 V1 admin nav from D-017..D-021)", () => {
+    expect(COMMANDS.length).toBe(34);
   });
 
   it("every id is unique", () => {
