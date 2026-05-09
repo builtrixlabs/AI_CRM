@@ -11,6 +11,7 @@ const NAV = [
   { href: "/admin/catalog", label: "Catalog" },
   { href: "/admin/billing", label: "Billing" },
   { href: "/admin/system-health", label: "System health" },
+  { href: "/admin/webhooks", label: "Webhooks" },
   { href: "/admin/integrations/voice-iq", label: "Voice IQ" },
   { href: "/settings/users", label: "Users" },
   { href: "/settings/roles", label: "Roles" },
