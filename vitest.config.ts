@@ -41,6 +41,7 @@ export default defineConfig({
         "src/lib/secrets/**",
         "src/app/(dashboard)/dashboard/_actions/**",
         "src/app/(platform)/platform/settings/secrets/**",
+        "src/app/(admin)/admin/directives/actions.ts",
       ],
       exclude: [
         // Thin SDK boundary wrappers; tested indirectly via the
