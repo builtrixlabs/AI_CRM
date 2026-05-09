@@ -49,6 +49,7 @@ export type CurrentUser = {
     phone?: string | null;
     notification_prefs?: NotificationPrefs;
     theme?: "light" | "dark" | "system";
+    mfa_verified_at?: string | null;
   };
   org_id: string | null;
   workspace_ids: string[];
