@@ -53,4 +53,8 @@ export type CockpitData = {
   };
   open_tickets: number;
   onboarding: { completed: boolean; current_step: StepId | "completed" };
+  compliance: {
+    rera_number: string | null;
+    gstin: string | null;
+  };
 };

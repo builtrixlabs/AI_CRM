@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ComplianceBadges } from "@/components/compliance/compliance-badges";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -57,13 +58,14 @@ export default async function OrganizationsListPage(props: {
               <TableHead>Name</TableHead>
               <TableHead>Slug</TableHead>
               <TableHead>Plan</TableHead>
+              <TableHead>Compliance</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {orgs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-neutral-500 py-8 text-center">
+                <TableCell colSpan={5} className="text-neutral-500 py-8 text-center">
                   No organizations yet. Provision the first one →
                 </TableCell>
               </TableRow>
@@ -83,6 +85,13 @@ export default async function OrganizationsListPage(props: {
                   <Badge variant="secondary" className="capitalize">
                     {o.plan_tier}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <ComplianceBadges
+                    rera_number={o.rera_number}
+                    gstin={o.gstin}
+                    compact
+                  />
                 </TableCell>
                 <TableCell className="text-neutral-500 text-sm">
                   {new Date(o.created_at).toLocaleDateString()}

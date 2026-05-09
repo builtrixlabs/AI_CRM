@@ -16,6 +16,13 @@ export async function getCockpitData(
   org_id: string,
   client: SupabaseClient = getSupabaseAdmin()
 ): Promise<CockpitData> {
+  const orgQ = await client
+    .from("organizations")
+    .select("rera_number, gstin")
+    .eq("id", org_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+
   const subQ = await client
     .from("subscriptions")
     .select("plan_tier, status")
@@ -53,6 +60,8 @@ export async function getCockpitData(
 
   const onboarding = await getOnboardingState(org_id, client);
 
+  const orgRow = orgQ.data as { rera_number: string | null; gstin: string | null } | null;
+
   return {
     subscription: subQ.data ?? null,
     usage: {
@@ -64,6 +73,10 @@ export async function getCockpitData(
     onboarding: {
       completed: onboarding.completed,
       current_step: onboarding.current_step,
+    },
+    compliance: {
+      rera_number: orgRow?.rera_number ?? null,
+      gstin: orgRow?.gstin ?? null,
     },
   };
 }

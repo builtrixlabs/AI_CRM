@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { ComplianceBadges } from "@/components/compliance/compliance-badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -27,9 +28,13 @@ export default async function OrgDetailPage(props: {
 
   return (
     <div className="space-y-6">
-      <header>
+      <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">{detail.name}</h1>
         <p className="text-sm text-neutral-600 font-mono">{detail.slug}</p>
+        <ComplianceBadges
+          rera_number={detail.rera_number}
+          gstin={detail.gstin}
+        />
       </header>
 
       {/* Section 1 — Info */}
@@ -49,8 +54,11 @@ export default async function OrgDetailPage(props: {
             <dt className="text-neutral-500">Created</dt>
             <dd>{new Date(detail.created_at).toLocaleString()}</dd>
 
+            <dt className="text-neutral-500">RERA number</dt>
+            <dd className="font-mono text-xs">{detail.rera_number ?? "—"}</dd>
+
             <dt className="text-neutral-500">GSTIN</dt>
-            <dd>{detail.gstin ?? "—"}</dd>
+            <dd className="font-mono text-xs">{detail.gstin ?? "—"}</dd>
 
             <dt className="text-neutral-500">Primary contact email</dt>
             <dd>{detail.primary_contact_email ?? "—"}</dd>
