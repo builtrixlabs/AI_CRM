@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ComplianceBadges } from "@/components/compliance/compliance-badges";
 import { getCockpitData, STEP_IDS } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
@@ -34,12 +35,16 @@ export default async function AdminCockpitPage(props: {
 
   return (
     <div className="space-y-6">
-      <header>
+      <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Admin cockpit</h1>
         <p className="text-sm text-neutral-600">
           Account state · configuration · customization. Operational work
           happens on the dashboard.
         </p>
+        <ComplianceBadges
+          rera_number={data.compliance.rera_number}
+          gstin={data.compliance.gstin}
+        />
       </header>
 
       {justFinished && (

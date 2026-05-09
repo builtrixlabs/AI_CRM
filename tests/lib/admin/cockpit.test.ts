@@ -36,6 +36,11 @@ describe("getCockpitData", () => {
           return {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
+            is: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { rera_number: "PRM/KA/RERA/1251/308/PR/200405/001234", gstin: "29AAACC1234A1Z5" },
+              error: null,
+            }),
             single: vi.fn().mockResolvedValue({
               data: {
                 onboarding_state: {
@@ -65,6 +70,10 @@ describe("getCockpitData", () => {
     expect(result.open_tickets).toBe(1);
     expect(result.onboarding.completed).toBe(false);
     expect(result.onboarding.current_step).toBe("lead_sources");
+    expect(result.compliance).toEqual({
+      rera_number: "PRM/KA/RERA/1251/308/PR/200405/001234",
+      gstin: "29AAACC1234A1Z5",
+    });
   });
 
   it("returns null subscription + 0 counts when nothing is seeded", async () => {
@@ -89,6 +98,11 @@ describe("getCockpitData", () => {
           return {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
+            is: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { rera_number: null, gstin: null },
+              error: null,
+            }),
             single: vi.fn().mockResolvedValue({
               data: { onboarding_state: {} },
               error: null,
@@ -102,5 +116,6 @@ describe("getCockpitData", () => {
     expect(result.subscription).toBeNull();
     expect(result.usage.active_users).toBe(0);
     expect(result.onboarding.current_step).toBe("org_details");
+    expect(result.compliance).toEqual({ rera_number: null, gstin: null });
   });
 });
