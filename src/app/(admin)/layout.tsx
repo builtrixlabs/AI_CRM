@@ -9,6 +9,7 @@ const NAV = [
   { href: "/admin/agents", label: "AI agents" },
   { href: "/admin/directives", label: "Directives" },
   { href: "/admin/catalog", label: "Catalog" },
+  { href: "/admin/billing", label: "Billing" },
   { href: "/admin/integrations/voice-iq", label: "Voice IQ" },
   { href: "/settings/users", label: "Users" },
   { href: "/settings/roles", label: "Roles" },
