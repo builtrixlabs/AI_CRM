@@ -8,7 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { MfaFreshnessBanner } from "@/components/auth/mfa-freshness-banner";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { isDemoBypassActive, isMfaFresh } from "@/lib/auth/mfa";
 import { resolveForUser } from "@/lib/auth/permissions";
 import { listUsersInOrg, workspaceCountsForUsers } from "@/lib/users/admin";
 import type { AssignableBaseRole } from "@/lib/users/types";
@@ -22,6 +24,8 @@ export default async function SettingsUsersPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/auth/sign-in");
   if (!user.org_id) redirect("/dashboard");
+  const demoBypass = await isDemoBypassActive();
+  const fresh = isMfaFresh(user.profile.mfa_verified_at ?? null);
 
   const perms = resolveForUser(user);
   if (!perms.has("settings:manage_users")) redirect("/403");
@@ -34,6 +38,12 @@ export default async function SettingsUsersPage() {
 
   return (
     <div className="space-y-6">
+      <MfaFreshnessBanner
+        verified_at={user.profile.mfa_verified_at ?? null}
+        fresh={fresh}
+        demo_bypass={demoBypass}
+        return_to="/settings/users"
+      />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>

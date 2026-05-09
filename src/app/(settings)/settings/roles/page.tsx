@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MfaFreshnessBanner } from "@/components/auth/mfa-freshness-banner";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { isDemoBypassActive as _isDemoBypassActive, isMfaFresh } from "@/lib/auth/mfa";
 import {
   BASE_ROLE_PERMS,
   PERMISSIONS,
@@ -57,7 +59,11 @@ export default async function RolesPage(props: {
   const sp = await props.searchParams;
   const role: AppRole = isAppRole(sp.role ?? "") ? (sp.role as AppRole) : "manager";
 
-  const overrides = await listOverrides(user.org_id);
+  const [overrides, demoBypass] = await Promise.all([
+    listOverrides(user.org_id),
+    _isDemoBypassActive(),
+  ]);
+  const fresh = isMfaFresh(user.profile.mfa_verified_at ?? null);
   const overrideMap = new Map<string, "allow" | "deny">();
   for (const o of overrides) {
     if (o.role === role) {
@@ -75,6 +81,12 @@ export default async function RolesPage(props: {
 
   return (
     <div className="space-y-6">
+      <MfaFreshnessBanner
+        verified_at={user.profile.mfa_verified_at ?? null}
+        fresh={fresh}
+        demo_bypass={demoBypass}
+        return_to="/settings/roles"
+      />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Roles</h1>
         <p className="text-sm text-neutral-600">
