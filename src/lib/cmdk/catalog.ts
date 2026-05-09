@@ -60,6 +60,14 @@ export const COMMANDS = [
     requires: ["organizations:edit"],
   },
   {
+    id: "nav-admin-directives",
+    label: "Admin · Directives",
+    group: "navigation",
+    kind: "navigate",
+    target: "/admin/directives",
+    requires: ["directives:author"],
+  },
+  {
     id: "nav-audit",
     label: "Open audit log",
     group: "navigation",
