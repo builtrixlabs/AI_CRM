@@ -22,6 +22,11 @@ const TRIGGER_KINDS = [
   "mih.lead_pushed",
   "legal.flag_raised",
   "call.objection_detected",
+  // D-131 — Voice IQ lean follow-up events (org-admin authorable too)
+  "call.bant_extracted",
+  "lead.intent_changed",
+  "call.compliance_flag",
+  "call.next_best_action",
 ] as const satisfies readonly TriggerKind[];
 
 const ACTION_KINDS = [
