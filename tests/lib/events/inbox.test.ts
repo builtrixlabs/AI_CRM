@@ -3,12 +3,28 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   onCallAudited: vi.fn(),
   onCallObjectionDetected: vi.fn(),
+  onBantExtracted: vi.fn(),
+  onLeadIntentChanged: vi.fn(),
+  onCallComplianceFlag: vi.fn(),
+  onCallNextBestAction: vi.fn(),
 }));
 vi.mock("@/lib/events/call-audit/onCallAudited", () => ({
   onCallAudited: mocks.onCallAudited,
 }));
 vi.mock("@/lib/events/call-audit/onCallObjectionDetected", () => ({
   onCallObjectionDetected: mocks.onCallObjectionDetected,
+}));
+vi.mock("@/lib/events/call-audit/onBantExtracted", () => ({
+  onBantExtracted: mocks.onBantExtracted,
+}));
+vi.mock("@/lib/events/call-audit/onLeadIntentChanged", () => ({
+  onLeadIntentChanged: mocks.onLeadIntentChanged,
+}));
+vi.mock("@/lib/events/call-audit/onCallComplianceFlag", () => ({
+  onCallComplianceFlag: mocks.onCallComplianceFlag,
+}));
+vi.mock("@/lib/events/call-audit/onCallNextBestAction", () => ({
+  onCallNextBestAction: mocks.onCallNextBestAction,
 }));
 
 import {
@@ -76,6 +92,20 @@ beforeEach(() => {
     deduped: false,
     node_id: "call-2",
   });
+  for (const m of [
+    mocks.onBantExtracted,
+    mocks.onLeadIntentChanged,
+    mocks.onCallComplianceFlag,
+    mocks.onCallNextBestAction,
+  ]) {
+    m.mockReset();
+    m.mockResolvedValue({
+      ok: true,
+      status: "ok",
+      deduped: false,
+      node_id: "lead-1",
+    });
+  }
 });
 
 describe("dispatchInboxEvent", () => {
@@ -128,6 +158,24 @@ describe("dispatchInboxEvent", () => {
       { client: client as never }
     );
     expect(mocks.onCallObjectionDetected).toHaveBeenCalledTimes(1);
+  });
+
+  it("D-131: routes the four new Voice IQ event_kinds", async () => {
+    const cases: Array<[string, ReturnType<typeof vi.fn>]> = [
+      ["call.bant_extracted", mocks.onBantExtracted],
+      ["lead.intent_changed", mocks.onLeadIntentChanged],
+      ["call.compliance_flag", mocks.onCallComplianceFlag],
+      ["call.next_best_action", mocks.onCallNextBestAction],
+    ];
+    for (const [kind, handler] of cases) {
+      const { client } = makeClient({ existing: null });
+      const result = await dispatchInboxEvent(
+        { ...baseEnvelope, event_kind: kind, source_product: "voice_iq" },
+        { client: client as never }
+      );
+      expect(result.ok).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("rejects unknown event_kind", async () => {

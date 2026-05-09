@@ -3,6 +3,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { envelopeSchema, type BuiltrixEvent, type InboxResult } from "./types";
 import { onCallAudited } from "./call-audit/onCallAudited";
 import { onCallObjectionDetected } from "./call-audit/onCallObjectionDetected";
+import { onBantExtracted } from "./call-audit/onBantExtracted";
+import { onLeadIntentChanged } from "./call-audit/onLeadIntentChanged";
+import { onCallComplianceFlag } from "./call-audit/onCallComplianceFlag";
+import { onCallNextBestAction } from "./call-audit/onCallNextBestAction";
 
 export type DispatchDeps = {
   client?: SupabaseClient;
@@ -100,6 +104,14 @@ export async function dispatchInboxEvent(
       result = await onCallAudited(envelope, { client });
     } else if (envelope.event_kind === "call.objection_detected") {
       result = await onCallObjectionDetected(envelope, { client });
+    } else if (envelope.event_kind === "call.bant_extracted") {
+      result = await onBantExtracted(envelope, { client });
+    } else if (envelope.event_kind === "lead.intent_changed") {
+      result = await onLeadIntentChanged(envelope, { client });
+    } else if (envelope.event_kind === "call.compliance_flag") {
+      result = await onCallComplianceFlag(envelope, { client });
+    } else if (envelope.event_kind === "call.next_best_action") {
+      result = await onCallNextBestAction(envelope, { client });
     } else {
       result = {
         ok: false,

@@ -107,6 +107,56 @@ export const callAuditedPayloadSchema = z
 
 export type CallAuditedPayload = z.infer<typeof callAuditedPayloadSchema>;
 
+// ── D-131 lean follow-up events ─────────────────────────────────────────────
+
+export const bantExtractedPayloadSchema = z
+  .object({
+    lead_id: z.string().uuid(),
+    workspace_id: z.string().uuid(),
+    call_id: z.string().uuid().optional(),
+    bant: bantSchema,
+  })
+  .strict();
+export type BantExtractedPayload = z.infer<typeof bantExtractedPayloadSchema>;
+
+export const leadIntentChangedPayloadSchema = z
+  .object({
+    lead_id: z.string().uuid(),
+    workspace_id: z.string().uuid(),
+    // intent_capture_score is required for this event; presence is
+    // enforced at the handler layer (zod refine on a child object would
+    // upcast to ZodEffects and complicate `.strict()` composition).
+    intent: intentSchema,
+  })
+  .strict();
+export type LeadIntentChangedPayload = z.infer<
+  typeof leadIntentChangedPayloadSchema
+>;
+
+export const callComplianceFlagPayloadSchema = z
+  .object({
+    lead_id: z.string().uuid(),
+    workspace_id: z.string().uuid(),
+    call_id: z.string().uuid().optional(),
+    flag: complianceFlagSchema,
+  })
+  .strict();
+export type CallComplianceFlagPayload = z.infer<
+  typeof callComplianceFlagPayloadSchema
+>;
+
+export const callNextBestActionPayloadSchema = z
+  .object({
+    lead_id: z.string().uuid(),
+    workspace_id: z.string().uuid(),
+    call_id: z.string().uuid().optional(),
+    nba: nextBestActionSchema,
+  })
+  .strict();
+export type CallNextBestActionPayload = z.infer<
+  typeof callNextBestActionPayloadSchema
+>;
+
 export const callObjectionPayloadSchema = z.object({
   lead_id: z.string().uuid(),
   workspace_id: z.string().uuid(),
