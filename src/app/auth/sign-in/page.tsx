@@ -6,6 +6,30 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 type Mode = "password" | "magic_link";
 type Status = "idle" | "sending" | "sent" | "error";
 
+async function checkRateLimit(): Promise<
+  | { ok: true }
+  | { ok: false; retry_after_seconds: number }
+> {
+  try {
+    const res = await fetch("/api/auth/rate-check", { method: "POST" });
+    if (res.status === 429) {
+      const body = await res.json();
+      return {
+        ok: false,
+        retry_after_seconds:
+          typeof body.retry_after_seconds === "number"
+            ? body.retry_after_seconds
+            : 30,
+      };
+    }
+    return { ok: true };
+  } catch {
+    // Fail-open if rate-check is unreachable. Supabase still throttles
+    // server-side; we just don't double-protect.
+    return { ok: true };
+  }
+}
+
 export default function SignInPage() {
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
@@ -44,6 +68,18 @@ export default function SignInPage() {
     e.preventDefault();
     setStatus("sending");
     setErrorMsg(null);
+
+    // D-210 — IP rate limit (5/60s in-memory). Don't burn a Supabase auth
+    // call when we're rate-limited.
+    const rate = await checkRateLimit();
+    if (!rate.ok) {
+      setStatus("error");
+      setErrorMsg(
+        `Too many attempts. Wait ~${rate.retry_after_seconds}s and try again.`
+      );
+      return;
+    }
+
     const supabase = createSupabaseBrowserClient();
 
     if (mode === "password") {
