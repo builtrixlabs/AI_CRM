@@ -6,6 +6,8 @@ export const WIDGET_TYPES = [
   "active_users_count",
   "recent_leads",
   "agent_status",
+  // D-224 — real-estate booking pipeline
+  "booking_pipeline",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -15,6 +17,7 @@ export const WIDGET_LABEL: Record<WidgetType, string> = {
   active_users_count: "Active users count",
   recent_leads: "Recent leads",
   agent_status: "Agent status",
+  booking_pipeline: "Booking pipeline",
 };
 
 export const WIDGET_DESCRIPTION: Record<WidgetType, string> = {
@@ -23,6 +26,8 @@ export const WIDGET_DESCRIPTION: Record<WidgetType, string> = {
   active_users_count: "Currently active org members.",
   recent_leads: "Last 10 leads ordered by creation time.",
   agent_status: "Provisioned vs. suspended agent count.",
+  booking_pipeline:
+    "Real-estate funnel: qualified → site visit → negotiation → booked.",
 };
 
 export const widgetSpecSchema = z
