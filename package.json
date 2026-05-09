@@ -21,6 +21,7 @@
     "test:agents": "node --test tests/agents/*.test.mjs",
     "test:plugin": "node --test tests/plugin/*.test.mjs",
     "test:security": "npx ts-node --esm scripts/secret-scanner.ts",
+    "demo:seed": "npx tsx scripts/demo/seed.ts",
     "prepare": "node -e \"if(process.env.CI==='true'||process.env.VERCEL)process.exit(0)\" && husky"
   },
   "dependencies": {
