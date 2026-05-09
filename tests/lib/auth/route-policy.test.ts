@@ -135,6 +135,12 @@ describe("decideRoute — channel_partner (AC-6)", () => {
       target: "/dashboard",
     });
   });
+
+  it("unauthenticated /api/* is allowed through (HMAC/Bearer/none-required at the handler)", () => {
+    expect(decideRoute(null, "/api/events/inbox")).toEqual({ kind: "allow" });
+    expect(decideRoute(null, "/api/auth/rate-check")).toEqual({ kind: "allow" });
+    expect(decideRoute(null, "/api/admin/leads/lookup")).toEqual({ kind: "allow" });
+  });
 });
 
 describe("decideRoute — service_account (AC-8)", () => {

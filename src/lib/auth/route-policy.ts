@@ -57,6 +57,11 @@ export function decideRoute(
 ): RouteDecision {
   if (isPublic(pathname) && user === null) return { kind: "allow" };
 
+  // API routes carry their own auth (HMAC for inbox, Bearer for lookup,
+  // intentionally-unauth for rate-check). Don't bounce them through the
+  // session-redirect path.
+  if (isApi(pathname) && user === null) return { kind: "allow" };
+
   if (user === null) {
     return { kind: "redirect", target: "/auth/sign-in" };
   }
