@@ -6,6 +6,7 @@ import {
   findOrgByVoiceIqSecret,
   lookupLead,
 } from "@/lib/integrations/voice-iq/lookup";
+import { withApiAudit } from "@/lib/api/audit-wrapper";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ async function authBearer(req: NextRequest, claimedOrgId: string): Promise<AuthO
   return { ok: false, status: 401, error: "invalid_bearer" };
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+async function lookupHandler(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
     external_id: url.searchParams.get("external_id") ?? undefined,
@@ -118,3 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     { status: 200 }
   );
 }
+
+export const GET = withApiAudit(lookupHandler, {
+  permission: "leads.lookup.read",
+});

@@ -3,6 +3,7 @@ import { verifyWhatsAppSignature } from "@/lib/webhooks/whatsapp/signature";
 import { dispatchInboxEvent, recordInboxIngestion } from "@/lib/events/inbox";
 import { getSecret } from "@/lib/secrets/getSecret";
 import { getVoiceIqSecret } from "@/lib/integrations/voice-iq/secret";
+import { withApiAudit } from "@/lib/api/audit-wrapper";
 import type { BuiltrixEvent } from "@/lib/events/types";
 
 export const runtime = "nodejs";
@@ -39,7 +40,7 @@ async function resolveSecret(rawBody: string): Promise<string> {
   return (await getSecret("builtrix_event_inbox_secret")) ?? "";
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+async function inboxHandler(req: NextRequest): Promise<NextResponse> {
   const sig = req.headers.get(SIGNATURE_HEADER);
   const raw = await req.text();
   const secret = await resolveSecret(raw);
@@ -85,3 +86,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   return NextResponse.json(result, { status: 200 });
 }
+
+export const POST = withApiAudit(inboxHandler, {
+  permission: "events.inbox.write",
+});
