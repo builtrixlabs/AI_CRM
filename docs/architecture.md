@@ -210,17 +210,22 @@ everything.
 
 ---
 
-## 8. Open V1 follow-ups (deferred from V0)
+## 8. V1 follow-ups — status
 
-- Real outbound WhatsApp send (D-010 ships intake only; D-016
-  parked).
-- Google Calendar OAuth + slot-block (D-012 ships templated
-  reminders only).
-- T3 approval queue UI (D-011 stamps `pending_approval`; queue
-  surface is V1).
-- Org-admin authoring UI for custom directives (D-011 seeds the
-  defaults; UI is V1).
-- Promote `webhook-dedup-via-jsonb-key` to a partial unique index
-  on `nodes` if pilot uncovers race-induced duplicates.
-- Rename `verifyWhatsAppSignature` → `verifyHMACSignature`
-  (D-013 reuses it for `/api/events/inbox`).
+| Item | Status | Lands in |
+|---|---|---|
+| Org-admin authoring UI for custom directives | **shipped** | D-017 |
+| Users + role assignment UI | **shipped** | D-018 |
+| Agent provisioning + suspend + tier override UI | **shipped** | D-019 |
+| Custom fields engine + canvas integration | **shipped** | D-020 |
+| Custom dashboards + 5 widget types | **shipped** | D-021 |
+| Real outbound WhatsApp send | deferred | V1.1 |
+| Google Calendar OAuth + slot-block | deferred | V1.1 |
+| T3 approval queue UI | deferred | V1.1 (runtime stamps pending_approval today) |
+| Per-workspace `app_role` fine-grained editing | deferred | V2 |
+| Magic-link user invitations | deferred | V2 (D-018 creates auth user; share creds offline) |
+| Drag-and-drop dashboard layout | deferred | V2 (D-021 ships checkbox widget selection) |
+| Promote `webhook-dedup-via-jsonb-key` to partial unique index | deferred | when pilot uncovers race-induced duplicates |
+| Rename `verifyWhatsAppSignature` → `verifyHMACSignature` | deferred | reuse already happens in D-013 |
+
+V1 admin surface is now feature-complete: every `/admin/*` and `/settings/*` placeholder from V0 has a real implementation. Remaining V1 follow-ups are optional polish + integration paths that don't block pilot.
