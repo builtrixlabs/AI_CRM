@@ -388,9 +388,24 @@ async function seedSupportTickets(
   counts: Counts,
 ) {
   const tickets = [
-    { subject: "Onboarding kickoff", status: "open", kind: "onboarding" },
-    { subject: "Plan upgrade request", status: "open", kind: "plan_upgrade_request" },
-    { subject: "WhatsApp template approved", status: "resolved", kind: "integration" },
+    {
+      subject: "Onboarding kickoff",
+      body: "Walk us through the demo agenda this Thursday — keen to see Voice IQ in action.",
+      status: "open",
+      kind: "onboarding",
+    },
+    {
+      subject: "Plan upgrade request",
+      body: "We've crossed 30 active leads in week two — want to move from Starter to Professional.",
+      status: "open",
+      kind: "plan_upgrade_request",
+    },
+    {
+      subject: "WhatsApp template approved",
+      body: "Template T-08 (post-site-visit thank-you) just cleared Meta review.",
+      status: "closed",
+      kind: "integration",
+    },
   ];
   for (let i = 0; i < tickets.length; i++) {
     const ticketId = id(`ticket.${i}`);
@@ -406,7 +421,9 @@ async function seedSupportTickets(
     const { error } = await client.from("support_tickets").insert({
       id: ticketId,
       organization_id: org_id,
+      raised_by: SYSTEM_UUID,
       subject: tickets[i].subject,
+      body: tickets[i].body,
       status: tickets[i].status,
       kind: tickets[i].kind,
       created_by: SYSTEM_UUID,
