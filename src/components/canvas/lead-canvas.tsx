@@ -26,6 +26,12 @@ type Props = {
   canTransition?: boolean;
   suggestedAction?: ReactNode;
   agentActivity?: ReactNode;
+  /**
+   * D-020 — server-rendered custom fields block. Passed in by the page
+   * (Server Component) so this Client Component doesn't need to await
+   * `listFieldsForType`.
+   */
+  customFields?: ReactNode;
 };
 
 /**
@@ -46,6 +52,7 @@ export function LeadCanvas(props: Props) {
     canTransition = false,
     suggestedAction,
     agentActivity,
+    customFields,
   } = props;
   const [editing, setEditing] = useState(false);
   const leadValid = leadSchema.safeParse(lead.data).success;
@@ -90,6 +97,7 @@ export function LeadCanvas(props: Props) {
             {leadValid ? (
               <CanvasSection delay={0.05} testId="section-fields">
                 <FieldBlock lead={lead} />
+                {customFields}
               </CanvasSection>
             ) : (
               <CanvasSection delay={0.05} testId="section-schema-mismatch">
