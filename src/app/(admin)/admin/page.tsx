@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ComplianceBadges } from "@/components/compliance/compliance-badges";
+import { SiteVisitCalendar } from "@/components/cockpit/site-visit-calendar";
 import { getCockpitData, STEP_IDS } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { getSiteVisitCalendar } from "@/lib/sitevisits/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,10 @@ export default async function AdminCockpitPage(props: {
   if (!user) redirect("/auth/sign-in");
   if (!user.org_id) redirect("/dashboard");
 
-  const data = await getCockpitData(user.org_id);
+  const [data, siteVisitDays] = await Promise.all([
+    getCockpitData(user.org_id),
+    getSiteVisitCalendar(user.org_id),
+  ]);
   const sp = await props.searchParams;
   const justFinished = sp.onboarded === "1";
 
@@ -138,6 +143,14 @@ export default async function AdminCockpitPage(props: {
             </CardContent>
           </Card>
         </div>
+      </section>
+
+      {/* Site visit calendar (D-222) */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">
+          Site visits · next 7 days
+        </h2>
+        <SiteVisitCalendar days={siteVisitDays} />
       </section>
 
       {/* Row 2 — Configuration */}
