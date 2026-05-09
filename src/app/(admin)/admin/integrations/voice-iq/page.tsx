@@ -19,12 +19,20 @@ export const dynamic = "force-dynamic";
 
 const PERMISSION = "integrations:voice_iq:manage" as const;
 
-function inboxUrl(): string {
-  const fromEnv =
+function appBase(): string {
+  return (
     process.env.NEXT_PUBLIC_APP_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ??
-    "http://localhost:3000";
-  return `${fromEnv.replace(/\/$/, "")}/api/events/inbox`;
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+}
+
+function inboxUrl(): string {
+  return `${appBase()}/api/events/inbox`;
+}
+
+function lookupUrl(): string {
+  return `${appBase()}/api/admin/leads/lookup`;
 }
 
 function statusBadgeVariant(
@@ -50,6 +58,7 @@ export default async function VoiceIqIntegrationPage() {
   ]);
 
   const url = inboxUrl();
+  const lookup = lookupUrl();
   const sourceLabel: Record<typeof secret.source, string> = {
     org: "per-org rotation",
     platform: "platform default",
@@ -90,6 +99,28 @@ export default async function VoiceIqIntegrationPage() {
               <p className="text-xs text-neutral-500">
                 Voice IQ POSTs JSON envelopes here, HMAC-SHA256 signed in the{" "}
                 <code className="font-mono">x-builtrix-signature</code> header.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-neutral-500">
+                Lookup URL <span className="text-neutral-400">(read)</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded-md border bg-neutral-50 px-2 py-1.5 text-xs font-mono break-all">
+                  {lookup}
+                </code>
+                <CopyButton value={lookup} />
+              </div>
+              <p className="text-xs text-neutral-500">
+                Voice IQ calls{" "}
+                <code className="font-mono">
+                  GET ?external_id=&amp;phone=&amp;org_id=
+                </code>{" "}
+                with{" "}
+                <code className="font-mono">Authorization: Bearer &lt;secret&gt;</code>{" "}
+                to resolve a lead before posting{" "}
+                <code className="font-mono">call.audited</code>.
               </p>
             </div>
 
