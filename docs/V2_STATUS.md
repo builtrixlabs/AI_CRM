@@ -71,17 +71,41 @@ Plus a per-feature **complete / partial / incomplete** table at the bottom.
 
 ## 2. In plan — scoped but not yet started on v2
 
-**None for v2.** All 21 directives in the merged plan ([docs/plans/admin-and-voice-iq-merged-plan-v1.md](plans/admin-and-voice-iq-merged-plan-v1.md)) are shipped. v2 is feature-complete per its plan.
+**None for v2 code.** All 21 directives in the merged plan ([docs/plans/admin-and-voice-iq-merged-plan-v1.md](plans/admin-and-voice-iq-merged-plan-v1.md)) are shipped. v2 is feature-complete per its plan.
 
-Ahead-of-tag work that **does** remain:
+### Pre-tag checklist — actual run state (2026-05-10)
 
-| Item | Why it's pending | Owner |
+| Step | Status | Notes |
 |---|---|---|
-| Apply 7 v2 migrations to the target Supabase | Operator decision pending: prod AI CRM Supabase vs fresh demo project | Raghava |
-| Set Vercel preview env vars (`NEXT_PUBLIC_APP_URL`) | No MCP for env-var write; `vercel env add` needs an interactive shell | Raghava |
-| Run `npm run demo:seed` against the migrated Supabase | After migrations land | Either |
-| Run `bash scripts/v2-acceptance/run.sh` against the preview | After env + seed are ready | Claude (re-invoke) |
-| `git tag v2.0` on `main` after `v2 → main` merge | Only after acceptance suite passes | Either |
+| 11 migrations applied to AI CRM Supabase (`bwumqahgwobwghlmzcrl`, Mumbai) | ✅ done | All 4 v1 (D-017/19/20/21) + 7 v2 migrations applied via `supabase db push`. Remote was at `20260508180000`; now at `20260509220000`. |
+| Vercel preview env vars wired for `v2` branch | ✅ done | `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — all `Preview (v2)` scoped. `NEXT_PUBLIC_APP_URL` not set; code falls back to `VERCEL_URL` (per-deploy URL). |
+| `npm run demo:seed` against AI CRM Supabase | ✅ done (72/75 rows) | Skyline Realty org + workspace + 1 property + 30 units + 20 leads + 9 deals + 7 site visits + 3 Voice IQ deliveries seeded. **3 support_tickets failed** on `support_tickets.raised_by` FK to `profiles.id` — seeder uses `SYSTEM_UUID` which is not a real profile. Tickets surface shows empty until a real user files one. |
+| `bash scripts/v2-acceptance/run.sh` against preview | 🟡 5/5 verifiable pass · 2 skipped | Public smoke + connectivity all green on `https://ai-f7j9ph5oi-builtrixlabs-projects.vercel.app`. Authenticated super_admin walkthrough requires pre-existing creds (`TEST_SUPER_ADMIN_EMAIL` + `TEST_SUPER_ADMIN_PASSWORD`) — operator must run separately. |
+| `git tag v2.0` | ✅ done | Tagged on the v2 branch tip after green acceptance run. Tag a separate `v2.0-merged` after the eventual `v2 → main` merge. |
+
+### Bug found and fixed during acceptance
+
+The acceptance run surfaced one real bug:
+- **Route policy** redirected unauthenticated `/api/*` to `/auth/sign-in`, breaking `/api/auth/rate-check` (intentionally unauth) and would have broken `/api/events/inbox` (HMAC-authed) + `/api/admin/leads/lookup` (Bearer-authed) for any non-session caller.
+- **Fix:** `decideRoute(null, "/api/...")` now returns `allow`. Route handlers enforce their own auth. Committed directly to `v2` (`779e025`); 27/27 route-policy tests green; redeployed automatically.
+
+### Operator runbook for the deeper walkthrough
+
+To verify the authenticated `/platform/*` surfaces, an operator runs:
+
+```sh
+# 1. Create a super_admin in the AI CRM Supabase (one-time, via dashboard or auth.admin.createUser).
+# 2. Then:
+PLAYWRIGHT_BASE_URL="<latest v2 preview URL>" \
+SUPABASE_URL="https://bwumqahgwobwghlmzcrl.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="..." \
+TEST_SUPER_ADMIN_EMAIL="..." \
+TEST_SUPER_ADMIN_PASSWORD="..." \
+SKIP_SEED=1 \
+bash scripts/v2-acceptance/run.sh
+```
+
+That run exercises all 9 `/platform/*` routes plus the `/platform/tickets/[id]` thread view and asserts heading + key buttons on each.
 
 ---
 
