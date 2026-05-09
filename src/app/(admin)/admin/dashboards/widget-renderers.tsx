@@ -120,6 +120,64 @@ export async function WidgetCard({
         </Card>
       );
     }
+    case "booking_pipeline": {
+      const data = await fetchWidgetData("booking_pipeline", organization_id);
+      const STAGE_LABEL: Record<string, string> = {
+        qualified: "Qualified",
+        site_visit_scheduled: "Visit scheduled",
+        site_visit_done: "Visit done",
+        negotiation: "Negotiation",
+        booked: "Booked",
+      };
+      const max = data.total_at_top;
+      const pct = data.conversion_rate_overall * 100;
+      return (
+        <Card data-testid={`widget-${spec.type}`}>
+          <CardHeader>
+            <CardTitle className="text-sm">{title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.total_at_top === 0 ? (
+              <p className="text-xs text-neutral-500">
+                No deals in the funnel yet.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {data.stages.map((s) => {
+                  const proportion = max > 0 ? s.count / max : 0;
+                  const isBooked = s.key === "booked";
+                  return (
+                    <div key={s.key} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-neutral-700">
+                          {STAGE_LABEL[s.key] ?? s.key}
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          {s.count}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+                        <div
+                          className={`h-full ${isBooked ? "bg-emerald-500" : "bg-neutral-400"}`}
+                          style={{ width: `${(proportion * 100).toFixed(1)}%` }}
+                          aria-label={`${s.key} bar`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="pt-2 text-xs text-neutral-600">
+                  Conversion (booked ÷ qualified):{" "}
+                  <span className="font-mono tabular-nums">
+                    {pct.toFixed(1)}%
+                  </span>
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      );
+    }
     case "agent_status": {
       const data = await fetchWidgetData("agent_status", organization_id);
       return (
