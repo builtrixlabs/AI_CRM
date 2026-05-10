@@ -95,7 +95,7 @@ export async function verifyTotpAction(
 
   const ret = safeReturn(returnTo);
   const ip = await callerIp();
-  if (!mfaVerifyBucket.consume(ip ?? user.user.id).allowed) {
+  if (!(await mfaVerifyBucket.consume(ip ?? user.user.id)).allowed) {
     redirect(mfaRedirect(ret, "rate_limited"));
   }
 
@@ -140,7 +140,7 @@ export async function verifyRecoveryAction(
 
   const ret = safeReturn(returnTo);
   const ip = await callerIp();
-  if (!mfaVerifyBucket.consume(ip ?? user.user.id).allowed) {
+  if (!(await mfaVerifyBucket.consume(ip ?? user.user.id)).allowed) {
     redirect(mfaRedirect(ret, "rate_limited"));
   }
 

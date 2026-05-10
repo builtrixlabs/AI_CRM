@@ -42,7 +42,7 @@ export async function confirmEnrollmentAction(
     h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     h.get("x-real-ip") ??
     user.user.id;
-  if (!mfaVerifyBucket.consume(ip).allowed) {
+  if (!(await mfaVerifyBucket.consume(ip)).allowed) {
     redirect(setupRedirect(ret, "rate_limited"));
   }
 
