@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getLeadCanvas } from "@/lib/canvas/api";
 import { LeadCanvas } from "@/components/canvas/lead-canvas";
 import { CustomFieldsBlock } from "@/components/canvas/custom-fields-block";
+import { PromoteToDealButton } from "@/components/canvas/promote-to-deal-button";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { resolveForUser } from "@/lib/auth/permissions";
 
@@ -18,14 +19,22 @@ export default async function LeadCanvasPage(props: {
   const perms = user ? resolveForUser(user) : new Set<string>();
   const canEdit = perms.has("leads:edit" as never);
   const canTransition = canEdit;
+  const canPromoteToDeal = perms.has("deals:create" as never);
 
   return (
-    <LeadCanvas
-      lead={data.lead}
-      initialActivities={data.activities}
-      canEdit={canEdit}
-      canTransition={canTransition}
-      customFields={<CustomFieldsBlock lead={data.lead} />}
-    />
+    <div className="space-y-3">
+      {canPromoteToDeal && (
+        <div className="flex justify-end">
+          <PromoteToDealButton leadId={data.lead.id} />
+        </div>
+      )}
+      <LeadCanvas
+        lead={data.lead}
+        initialActivities={data.activities}
+        canEdit={canEdit}
+        canTransition={canTransition}
+        customFields={<CustomFieldsBlock lead={data.lead} />}
+      />
+    </div>
   );
 }

@@ -22,6 +22,7 @@ vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
   createLeadAction: vi.fn(),
   updateLeadAction: vi.fn(),
   transitionLeadAction: vi.fn(),
+  promoteLeadToDealAction: vi.fn(),
 }));
 // D-020 — CustomFieldsBlock pulls in service-role admin client, mock it here.
 vi.mock("@/components/canvas/custom-fields-block", () => ({
@@ -71,8 +72,23 @@ describe("/dashboard/leads/[id]", () => {
     mocks.resolveForUser.mockReturnValue(new Set(["leads:edit"]));
     const result = (await LeadCanvasPage({
       params: Promise.resolve({ id: DEMO_LEAD.id }),
-    })) as { props: { canEdit: boolean; canTransition: boolean } };
-    expect(result.props.canEdit).toBe(true);
-    expect(result.props.canTransition).toBe(true);
+    })) as {
+      props: {
+        children?: ReadonlyArray<{ props?: { canEdit?: boolean; canTransition?: boolean } } | unknown>;
+      };
+    };
+    // D-321 — page now wraps LeadCanvas in a <div> containing an optional
+    // PromoteToDealButton. Find the LeadCanvas element by descending into
+    // the children array.
+    const children = (result.props.children ?? []) as ReadonlyArray<unknown>;
+    const leadCanvas = children.find(
+      (c): c is { props: { canEdit: boolean; canTransition: boolean } } =>
+        typeof c === "object" &&
+        c !== null &&
+        "props" in (c as object) &&
+        typeof (c as { props: { canEdit?: unknown } }).props.canEdit === "boolean"
+    );
+    expect(leadCanvas?.props.canEdit).toBe(true);
+    expect(leadCanvas?.props.canTransition).toBe(true);
   });
 });

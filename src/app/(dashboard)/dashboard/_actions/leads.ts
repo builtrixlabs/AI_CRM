@@ -273,3 +273,45 @@ export async function transitionLeadAction(
     };
   }
 }
+
+// ── D-321 — Promote lead to deal ────────────────────────────────────────
+
+export type PromoteLeadActionResult =
+  | { ok: true; deal_id: string }
+  | { ok: false; error: "permission" | "validation" | "internal"; message?: string };
+
+export async function promoteLeadToDealAction(
+  lead_id: string
+): Promise<PromoteLeadActionResult> {
+  const user = await getCurrentUser();
+  if (!user || !user.org_id || user.workspace_ids.length === 0) {
+    return { ok: false, error: "permission" };
+  }
+  const perms = resolveForUser(user);
+  if (!perms.has("deals:create")) {
+    return { ok: false, error: "permission" };
+  }
+
+  // Pre-check the lead is in caller's tenant (caller_org_filter pattern).
+  const tenantCheck = await assertLeadInTenant(lead_id, user.org_id);
+  if (!tenantCheck) {
+    return { ok: false, error: "validation", message: "Lead not found" };
+  }
+
+  const { promoteLeadToDeal } = await import("@/lib/deals/api");
+  const r = await promoteLeadToDeal({
+    lead_id,
+    organization_id: user.org_id,
+    workspace_id: user.workspace_ids[0],
+    caller_id: user.user.id,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      error: r.error === "not_found" ? "validation" : "internal",
+      message: r.message,
+    };
+  }
+  revalidatePath(`/dashboard/leads/${lead_id}`);
+  return { ok: true, deal_id: r.deal_id };
+}
