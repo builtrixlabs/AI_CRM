@@ -5,6 +5,7 @@ import {
   type DeliveryRow,
   type EndpointRow,
 } from "./deliver";
+import type { ResolverFn } from "./dns-rebinding";
 import { MAX_ATTEMPTS, nextRetryAt } from "./retry";
 
 /**
@@ -45,7 +46,8 @@ type RawEndpoint = {
 
 export async function runWebhookWorker(
   client: SupabaseClient = getSupabaseAdmin(),
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  resolver?: ResolverFn,
 ): Promise<WorkerSummary> {
   const summary: WorkerSummary = {
     scanned: 0,
@@ -96,7 +98,7 @@ export async function runWebhookWorker(
       disabled_at: ep.disabled_at,
     };
 
-    const result = await attemptDelivery(delivery, epRow, fetchImpl);
+    const result = await attemptDelivery(delivery, epRow, fetchImpl, resolver);
 
     if (result.outcome === "delivered") {
       await client

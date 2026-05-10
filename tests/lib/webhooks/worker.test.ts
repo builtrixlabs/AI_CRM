@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runWebhookWorker } from "@/lib/webhooks/worker";
+import type { ResolverFn } from "@/lib/webhooks/dns-rebinding";
+
+const okResolver: ResolverFn = async () => [{ address: "8.8.8.8", family: 4 }];
 
 type Delivery = {
   id: string;
@@ -118,7 +121,7 @@ describe("worker.runWebhookWorker", () => {
     const fetcher = vi.fn(
       async () => new Response("ok", { status: 200 })
     );
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary).toMatchObject({
       scanned: 1,
       delivered: 1,
@@ -133,7 +136,7 @@ describe("worker.runWebhookWorker", () => {
     deliveries.push(baseDelivery({ attempt_number: 2 }));
     endpoints.push(baseEndpoint({ consecutive_failures: 3 }));
     const fetcher = vi.fn(async () => new Response("", { status: 503 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.retried).toBe(1);
     expect(deliveries[0].status).toBe("pending");
     expect(deliveries[0].attempt_number).toBe(3);
@@ -146,7 +149,7 @@ describe("worker.runWebhookWorker", () => {
     const fetcher = vi.fn(
       async () => new Response("nope", { status: 404 })
     );
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.dead).toBe(1);
     expect(deliveries[0].status).toBe("failed");
     expect(deliveries[0].next_retry_at).toBeNull();
@@ -157,7 +160,7 @@ describe("worker.runWebhookWorker", () => {
     deliveries.push(baseDelivery({ attempt_number: 6 }));
     endpoints.push(baseEndpoint());
     const fetcher = vi.fn(async () => new Response("", { status: 500 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.dead).toBe(1);
     expect(deliveries[0].status).toBe("dead");
   });
@@ -166,7 +169,7 @@ describe("worker.runWebhookWorker", () => {
     deliveries.push(baseDelivery());
     endpoints.push(baseEndpoint({ consecutive_failures: 9 }));
     const fetcher = vi.fn(async () => new Response("", { status: 500 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(endpoints[0].consecutive_failures).toBe(10);
     expect(endpoints[0].disabled_at).toBeTruthy();
     expect(summary.endpoints_disabled).toBe(1);
@@ -181,7 +184,7 @@ describe("worker.runWebhookWorker", () => {
       })
     );
     const fetcher = vi.fn(async () => new Response("", { status: 200 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     // Endpoint is already disabled -> worker marks delivery dead WITHOUT firing fetch.
     expect(summary.dead).toBe(1);
     expect(summary.endpoints_disabled).toBe(0);
@@ -191,7 +194,7 @@ describe("worker.runWebhookWorker", () => {
   it("skips deliveries where endpoint was deleted (not_found)", async () => {
     deliveries.push(baseDelivery({ endpoint_id: "ep-missing" }));
     const fetcher = vi.fn();
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.dead).toBe(1);
     expect(deliveries[0].status).toBe("dead");
     expect(deliveries[0].error_message).toBe("endpoint_not_found");
@@ -205,7 +208,7 @@ describe("worker.runWebhookWorker", () => {
     );
     endpoints.push(baseEndpoint());
     const fetcher = vi.fn(async () => new Response("", { status: 200 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.scanned).toBe(0);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -216,7 +219,7 @@ describe("worker.runWebhookWorker", () => {
     const fetcher = vi.fn(async () => {
       throw new Error("ECONNRESET");
     });
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.retried).toBe(1);
     expect(deliveries[0].status).toBe("pending");
     expect(deliveries[0].error_message).toBe("ECONNRESET");
@@ -227,7 +230,7 @@ describe("worker.runWebhookWorker", () => {
     deliveries.push(baseDelivery({ id: "d2" }));
     endpoints.push(baseEndpoint());
     const fetcher = vi.fn(async () => new Response("", { status: 200 }));
-    const summary = await runWebhookWorker(makeClient() as never, fetcher as never);
+    const summary = await runWebhookWorker(makeClient() as never, fetcher as never, okResolver);
     expect(summary.scanned).toBe(2);
     expect(summary.delivered).toBe(2);
     expect(fetcher).toHaveBeenCalledTimes(2);

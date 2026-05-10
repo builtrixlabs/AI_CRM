@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { signPayload } from "./signing";
+import { resolveAndCheck, type ResolverFn } from "./dns-rebinding";
 
 export type DeliveryOutcome = "delivered" | "retry" | "dead";
 
@@ -141,7 +142,8 @@ export function classifyResponse(
 export async function attemptDelivery(
   delivery: DeliveryRow,
   endpoint: EndpointRow,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  resolver?: ResolverFn,
 ): Promise<AttemptResult> {
   if (endpoint.disabled_at) {
     return {
@@ -159,6 +161,24 @@ export async function attemptDelivery(
       status_code: null,
       latency_ms: 0,
       error_message: `ssrf_blocked:${ssrfReason}`,
+    };
+  }
+
+  // V3.x — DNS-rebinding check at delivery time. Resolve hostname; reject if
+  // any record is private/loopback/link-local/etc.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(endpoint.url);
+  } catch {
+    return { outcome: "dead", status_code: null, latency_ms: 0, error_message: "invalid_url" };
+  }
+  const rebindReason = await resolveAndCheck(parsedUrl.hostname, resolver);
+  if (rebindReason) {
+    return {
+      outcome: "dead",
+      status_code: null,
+      latency_ms: 0,
+      error_message: `rebind_blocked:${rebindReason}`,
     };
   }
 

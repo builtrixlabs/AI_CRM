@@ -8,6 +8,10 @@ import {
   type EndpointRow,
 } from "@/lib/webhooks/deliver";
 import { verifySignature } from "@/lib/webhooks/signing";
+import type { ResolverFn } from "@/lib/webhooks/dns-rebinding";
+
+// Default resolver for happy-path tests: every hostname maps to a public IP.
+const okResolver: ResolverFn = async () => [{ address: "8.8.8.8", family: 4 }];
 
 const DELIVERY: DeliveryRow = {
   id: "del-1",
@@ -92,7 +96,7 @@ describe("deliver.classifyResponse", () => {
 describe("deliver.attemptDelivery", () => {
   it("2xx response -> delivered with status_code + latency_ms", async () => {
     const fetcher = makeFetch({ status: 200, body: '{"received":true}' });
-    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(r.outcome).toBe("delivered");
     expect(r.status_code).toBe(200);
     expect(r.response_body).toBe('{"received":true}');
@@ -102,7 +106,7 @@ describe("deliver.attemptDelivery", () => {
 
   it("4xx response -> dead with the response body for forensics", async () => {
     const fetcher = makeFetch({ status: 404, body: "not found" });
-    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(r.outcome).toBe("dead");
     expect(r.status_code).toBe(404);
     expect(r.response_body).toBe("not found");
@@ -110,14 +114,14 @@ describe("deliver.attemptDelivery", () => {
 
   it("5xx response -> retry", async () => {
     const fetcher = makeFetch({ status: 503 });
-    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(r.outcome).toBe("retry");
     expect(r.status_code).toBe(503);
   });
 
   it("network error -> retry with error_message", async () => {
     const fetcher = makeFetch({ throws: true });
-    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(r.outcome).toBe("retry");
     expect(r.status_code).toBeNull();
     expect(r.error_message).toBe("ECONNRESET");
@@ -159,6 +163,22 @@ describe("deliver.attemptDelivery", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("DNS-rebind defense: hostname resolves to private IP -> dead without firing fetch", async () => {
+    const fetcher = makeFetch({ status: 200 });
+    // Hostname is syntactically benign (looks public) but the resolver flips
+    // it to 10.0.0.5. attemptDelivery must catch this at the DNS layer.
+    const rebindResolver: ResolverFn = async () => [{ address: "10.0.0.5", family: 4 }];
+    const r = await attemptDelivery(
+      DELIVERY,
+      { ...ENDPOINT, url: "https://looks-public.example.com/x" },
+      fetcher as never,
+      rebindResolver,
+    );
+    expect(r.outcome).toBe("dead");
+    expect(r.error_message).toBe("rebind_blocked:private_v4:10.0.0.5");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("signs the request body with the endpoint secret", async () => {
     let capturedHeaders: Headers | null = null;
     let capturedBody = "";
@@ -167,7 +187,7 @@ describe("deliver.attemptDelivery", () => {
       capturedBody = init.body as string;
       return new Response("", { status: 200 });
     });
-    await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(capturedHeaders).not.toBeNull();
     const sig = capturedHeaders!.get("x-builtrix-signature");
     expect(sig).toMatch(/^sha256=[0-9a-f]{64}$/);
@@ -183,7 +203,8 @@ describe("deliver.attemptDelivery", () => {
     await attemptDelivery(
       { ...DELIVERY, attempt_number: 3 },
       ENDPOINT,
-      fetcher as never
+      fetcher as never,
+      okResolver,
     );
     expect(capturedHeaders!.get("x-builtrix-event-kind")).toBe("lead.created");
     expect(capturedHeaders!.get("x-builtrix-attempt")).toBe("3");
@@ -192,7 +213,7 @@ describe("deliver.attemptDelivery", () => {
   it("truncates response body at 4KB", async () => {
     const big = "x".repeat(10_000);
     const fetcher = makeFetch({ status: 200, body: big });
-    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never);
+    const r = await attemptDelivery(DELIVERY, ENDPOINT, fetcher as never, okResolver);
     expect(r.response_body!.length).toBe(4096);
   });
 });
