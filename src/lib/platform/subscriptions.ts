@@ -149,6 +149,8 @@ export async function suspendOrg(
   if (!reason || reason.trim().length < 3) {
     return { ok: false, error: "reason_required" };
   }
+  const trimmed = reason.trim();
+
   const { error } = await client
     .from("subscriptions")
     .update({
@@ -159,7 +161,23 @@ export async function suspendOrg(
     })
     .eq("organization_id", ctx.organization_id);
   if (error) return { ok: false, error: error.message };
-  await audit(client, ctx, "subscription_suspended", { reason: reason.trim() });
+
+  // D-302 — force-sign-out marker. Upsert: a re-suspend just refreshes
+  // revoked_at/revoked_by, doesn't fail.
+  const { error: revErr } = await client
+    .from("org_session_revocations")
+    .upsert(
+      {
+        organization_id: ctx.organization_id,
+        revoked_at: new Date().toISOString(),
+        revoked_by: ctx.actor_id,
+        reason: trimmed,
+      },
+      { onConflict: "organization_id" }
+    );
+  if (revErr) return { ok: false, error: revErr.message };
+
+  await audit(client, ctx, "subscription_suspended", { reason: trimmed });
   return { ok: true };
 }
 
@@ -209,6 +227,15 @@ export async function reactivateOrg(
     })
     .eq("organization_id", ctx.organization_id);
   if (error) return { ok: false, error: error.message };
+
+  // D-302 — clear the force-sign-out marker. Idempotent: deleting a
+  // non-existent row is not an error.
+  const { error: revErr } = await client
+    .from("org_session_revocations")
+    .delete()
+    .eq("organization_id", ctx.organization_id);
+  if (revErr) return { ok: false, error: revErr.message };
+
   await audit(client, ctx, "subscription_reactivated", {});
   return { ok: true };
 }

@@ -101,6 +101,23 @@ export default function SignInPage() {
         setErrorMsg(error.message);
         return;
       }
+      // D-302 — session is valid at the Supabase layer; check that the org
+      // isn't suspended before bouncing home (otherwise the user
+      // silently loops through /auth/sign-in via middleware redirect).
+      try {
+        const me = await fetch("/api/auth/whoami", { cache: "no-store" });
+        const body = await me.json();
+        if (!body.user) {
+          await supabase.auth.signOut();
+          setStatus("error");
+          setErrorMsg(
+            "Your session can't be activated. Your organization may be suspended — contact your admin or support."
+          );
+          return;
+        }
+      } catch {
+        /* if whoami is unreachable, fall through; middleware will catch */
+      }
       // Session cookies set by @supabase/ssr; bounce home — middleware routes.
       window.location.href = "/";
       return;

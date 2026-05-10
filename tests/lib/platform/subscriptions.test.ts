@@ -15,6 +15,7 @@ const ACTOR = "99999999-8888-4777-8666-555555555555";
 function makeWriteClient(opts: { update_error?: boolean } = {}) {
   const updates: unknown[] = [];
   const audits: unknown[] = [];
+  const revocations: { kind: "upsert" | "delete"; payload: unknown }[] = [];
   const subsChain = {
     update: vi.fn((row: unknown) => {
       updates.push(row);
@@ -30,6 +31,7 @@ function makeWriteClient(opts: { update_error?: boolean } = {}) {
   return {
     updates,
     audits,
+    revocations,
     client: {
       from: vi.fn((table: string) => {
         if (table === "subscriptions") return subsChain;
@@ -39,6 +41,20 @@ function makeWriteClient(opts: { update_error?: boolean } = {}) {
               audits.push(row);
               return Promise.resolve({ error: null });
             }),
+          };
+        }
+        if (table === "org_session_revocations") {
+          return {
+            upsert: vi.fn((row: unknown) => {
+              revocations.push({ kind: "upsert", payload: row });
+              return Promise.resolve({ error: null });
+            }),
+            delete: vi.fn(() => ({
+              eq: vi.fn((_col: string, val: unknown) => {
+                revocations.push({ kind: "delete", payload: val });
+                return Promise.resolve({ error: null });
+              }),
+            })),
           };
         }
         throw new Error(`unexpected ${table}`);
@@ -169,6 +185,25 @@ describe("suspendOrg", () => {
     );
   });
 
+  it("D-302 — also UPSERTs an org_session_revocations row", async () => {
+    const env = makeWriteClient();
+    await suspendOrg(
+      { actor_id: ACTOR, organization_id: ORG_A },
+      "Non-payment Q1",
+      env.client as never
+    );
+    expect(env.revocations).toHaveLength(1);
+    expect(env.revocations[0].kind).toBe("upsert");
+    const payload = env.revocations[0].payload as {
+      organization_id: string;
+      revoked_by: string;
+      reason: string;
+    };
+    expect(payload.organization_id).toBe(ORG_A);
+    expect(payload.revoked_by).toBe(ACTOR);
+    expect(payload.reason).toBe("Non-payment Q1");
+  });
+
   it("propagates db errors", async () => {
     const env = makeWriteClient({ update_error: true });
     const r = await suspendOrg(
@@ -213,5 +248,16 @@ describe("reactivateOrg", () => {
     expect((env.audits[0] as { action: string }).action).toBe(
       "subscription_reactivated"
     );
+  });
+
+  it("D-302 — also DELETEs the org_session_revocations row (idempotent)", async () => {
+    const env = makeWriteClient();
+    await reactivateOrg(
+      { actor_id: ACTOR, organization_id: ORG_A },
+      env.client as never
+    );
+    expect(env.revocations).toHaveLength(1);
+    expect(env.revocations[0].kind).toBe("delete");
+    expect(env.revocations[0].payload).toBe(ORG_A);
   });
 });

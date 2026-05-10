@@ -68,7 +68,15 @@ describe("totp.encryptSecret + decryptSecret", () => {
   it("tampered ciphertext throws on decrypt (auth tag mismatch)", () => {
     const { secret_b32 } = generateSecret();
     const p = encryptSecret(secret_b32);
-    const tampered = { ...p, ciphertext: p.ciphertext.replace(/.$/, "0") };
+    // Flip the last hex nibble deterministically so the tampered char
+    // is always different from the original (avoids the flake where
+    // the random byte happens to already end in '0').
+    const lastChar = p.ciphertext.slice(-1);
+    const flipped = lastChar === "0" ? "1" : "0";
+    const tampered = {
+      ...p,
+      ciphertext: p.ciphertext.slice(0, -1) + flipped,
+    };
     expect(() => decryptSecret(tampered)).toThrow();
   });
 

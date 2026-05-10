@@ -50,6 +50,19 @@ export async function getCurrentUser(
 
   if (profileError || !profile) return null;
 
+  // D-302 — force-sign-out check. If the caller's org has a row in
+  // org_session_revocations, treat as unauthenticated. Uses a SECURITY
+  // DEFINER RPC because the table is super-admin-only at the RLS layer.
+  // Fail-closed on RPC error: surfacing 401 on a transient KV/network
+  // hiccup is preferable to admitting a freshly-suspended user.
+  if (profile.organization_id) {
+    const { data: revoked, error: revokedErr } = (await c.rpc(
+      "app_is_org_revoked",
+      { org_id: profile.organization_id }
+    )) as { data: boolean | null; error: unknown };
+    if (revokedErr || revoked === true) return null;
+  }
+
   const { data: bridgeRows } = (await c
     .from("user_app_roles")
     .select("workspace_id, app_role")
