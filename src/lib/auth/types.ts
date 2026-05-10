@@ -51,6 +51,8 @@ export type CurrentUser = {
     theme?: "light" | "dark" | "system";
     mfa_verified_at?: string | null;
     mfa_enrolled_at?: string | null;
+    /** D-413: per-user default view per entity_type. `{ "lead": "<uuid>", ... }`. */
+    view_defaults?: Record<string, string>;
   };
   org_id: string | null;
   workspace_ids: string[];
