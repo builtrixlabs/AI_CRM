@@ -10,10 +10,28 @@ import {
 
 export type ProfileFormResult =
   | { ok: true }
-  | { ok: false; error: "permission" | "validation" | "unknown"; message?: string };
+  | {
+      ok: false;
+      error: "permission" | "validation" | "unknown";
+      message?: string;
+    };
 
-export async function updateProfileAction(
-  formData: FormData
+const REVALIDATE_PATHS = [
+  "/dashboard/settings",
+  "/cp/settings",
+  "/admin/settings",
+  "/platform/settings/profile",
+] as const;
+
+/**
+ * Single server action that backs every "Your profile" page (dashboard, cp,
+ * admin, platform). Each surface calls the same action so we have one
+ * validation + audit path. We revalidate every profile page because the action
+ * fires once per save (cheap) and revalidating just the caller's path leaves
+ * stale display names visible if the user ever lands on a sibling surface.
+ */
+export async function updateOwnProfileAction(
+  formData: FormData,
 ): Promise<ProfileFormResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "permission" };
@@ -53,6 +71,6 @@ export async function updateProfileAction(
     };
   }
 
-  revalidatePath("/platform/settings/profile");
+  for (const p of REVALIDATE_PATHS) revalidatePath(p);
   return { ok: true };
 }

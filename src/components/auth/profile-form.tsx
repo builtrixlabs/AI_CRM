@@ -2,7 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useTheme } from "next-themes";
-import { updateProfileAction } from "./actions";
+
+export type ProfileFormResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "permission" | "validation" | "unknown";
+      message?: string;
+    };
 
 type Props = {
   email: string;
@@ -14,6 +21,8 @@ type Props = {
     in_app_enabled?: boolean;
     digest_frequency?: "off" | "daily" | "weekly";
   };
+  /** Server action that persists the form. */
+  action: (formData: FormData) => Promise<ProfileFormResult>;
 };
 
 export function ProfileForm(props: Props) {
@@ -27,11 +36,15 @@ export function ProfileForm(props: Props) {
     setError(null);
     const fd = new FormData(e.currentTarget);
     const themeChoice = fd.get("theme")?.toString();
-    if (themeChoice === "light" || themeChoice === "dark" || themeChoice === "system") {
+    if (
+      themeChoice === "light" ||
+      themeChoice === "dark" ||
+      themeChoice === "system"
+    ) {
       setTheme(themeChoice);
     }
     startTransition(async () => {
-      const r = await updateProfileAction(fd);
+      const r = await props.action(fd);
       if (r.ok) {
         setSavedAt(new Date());
         setTimeout(() => setSavedAt(null), 3500);
@@ -42,7 +55,11 @@ export function ProfileForm(props: Props) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6 max-w-2xl">
+    <form
+      onSubmit={onSubmit}
+      className="space-y-6 max-w-2xl"
+      data-testid="profile-form"
+    >
       <section className="space-y-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
           Profile
@@ -59,13 +76,15 @@ export function ProfileForm(props: Props) {
             className="w-full rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500"
           />
           <p className="text-xs text-neutral-500 mt-1">
-            Email is the auth identity and cannot be changed here. Contact platform
-            ops to migrate to a new email.
+            Email is the auth identity and cannot be changed here.
           </p>
         </div>
 
         <div>
-          <label htmlFor="display_name" className="text-xs text-neutral-600 block mb-1">
+          <label
+            htmlFor="display_name"
+            className="text-xs text-neutral-600 block mb-1"
+          >
             Display name
           </label>
           <input
@@ -136,7 +155,10 @@ export function ProfileForm(props: Props) {
           In-app notifications
         </label>
         <div>
-          <label htmlFor="notif_digest" className="text-xs text-neutral-600 block mb-1">
+          <label
+            htmlFor="notif_digest"
+            className="text-xs text-neutral-600 block mb-1"
+          >
             Activity digest
           </label>
           <select
@@ -160,12 +182,8 @@ export function ProfileForm(props: Props) {
         >
           {pending ? "Saving…" : "Save changes"}
         </button>
-        {savedAt && (
-          <span className="text-xs text-emerald-700">Saved.</span>
-        )}
-        {error && (
-          <span className="text-xs text-red-600">{error}</span>
-        )}
+        {savedAt && <span className="text-xs text-emerald-700">Saved.</span>}
+        {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </form>
   );

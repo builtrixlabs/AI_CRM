@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { UserMenu } from "@/components/auth/user-menu";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
 const NAV = [
   { href: "/cp/submit", label: "Submit lead" },
   { href: "/cp/submissions", label: "My submissions" },
+  { href: "/cp/settings", label: "Settings" },
 ];
 
 export default async function CpLayout({
@@ -14,8 +15,6 @@ export default async function CpLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
-  const displayName =
-    user?.profile.display_name ?? user?.user.email ?? "channel_partner";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -24,18 +23,15 @@ export default async function CpLayout({
           <Link href="/cp" className="font-semibold tracking-tight">
             Builtrix · Channel Partner Portal
           </Link>
-          <div className="flex items-center gap-3">
-            <span
-              className="text-xs text-emerald-200"
-              title={user?.user.email ?? ""}
-            >
-              {displayName}
-            </span>
-            <SignOutButton
-              className="rounded-md border border-emerald-700 bg-emerald-800 px-3 py-1 text-xs hover:bg-emerald-700"
-              redirectTo="/auth/sign-in"
+          {user && (
+            <UserMenu
+              displayName={user.profile.display_name}
+              email={user.user.email}
+              settingsHref="/cp/settings"
+              nameClassName="text-xs text-emerald-200"
+              buttonClassName="rounded-md border border-emerald-700 bg-emerald-800 px-3 py-1 text-xs hover:bg-emerald-700"
             />
-          </div>
+          )}
         </div>
       </header>
 
