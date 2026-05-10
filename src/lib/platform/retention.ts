@@ -94,6 +94,27 @@ export async function pruneOne(
   };
 }
 
+/**
+ * V3.x — read the resolved retention day count for one (org, table) pair.
+ * Per-org override → platform_flags default → hardcoded default.
+ *
+ * Backed by the `get_org_retention_days(uuid, text)` SECURITY DEFINER RPC
+ * (migration 20260510130000_org_retention_overrides.sql).
+ */
+export async function getOrgRetentionDays(
+  org_id: string,
+  table: PruneTable,
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<number> {
+  const { data, error } = await client.rpc("get_org_retention_days", {
+    p_org_id: org_id,
+    p_table: table,
+  });
+  if (error) return DEFAULT_RETENTION[table];
+  const v = typeof data === "number" ? data : Number(data);
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_RETENTION[table];
+}
+
 export async function pruneAll(
   client: SupabaseClient = getSupabaseAdmin()
 ): Promise<PruneEntry[]> {
