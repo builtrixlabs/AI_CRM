@@ -9,11 +9,12 @@ import { inngest } from "../client";
 import { runAutoSuspendSweep } from "@/lib/platform/auto-suspend";
 
 export const autoSuspendCron = inngest.createFunction(
-  { id: "billing-auto-suspend-sweep" },
-  { cron: "0 * * * *" },
-  async ({ logger }) => {
-    const summary = await runAutoSuspendSweep();
-    logger.info("auto_suspend_sweep", summary);
-    return summary;
+  {
+    id: "billing-auto-suspend-sweep",
+    retries: 1,
+    triggers: [{ cron: "0 * * * *" }],
+  },
+  async ({ step }) => {
+    return await step.run("sweep", async () => runAutoSuspendSweep());
   },
 );
