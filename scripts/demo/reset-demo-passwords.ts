@@ -9,8 +9,11 @@
  */
 import { createClient } from "@supabase/supabase-js";
 
+// NB: superadmin@builtrixcrm.ai is intentionally EXCLUDED. It is the
+// platform-bootstrap account and must not share its password with the
+// per-org demo accounts. Use scripts/bootstrap-super-admin.sh to rotate
+// it deliberately.
 const ACCOUNTS = [
-  "superadmin@builtrixcrm.ai",
   "owner-skyline@builtrixcrm.ai",
   "admin-skyline@builtrixcrm.ai",
   "manager-skyline@builtrixcrm.ai",
