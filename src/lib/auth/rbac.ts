@@ -82,6 +82,7 @@ export const PERMISSIONS = [
   "units:view",
   "units:create",
   "units:edit",
+  "catalog:admin_override",
 
   // ── Activities / calls / campaigns ──────────────────────────────────────
   "activities:view",
@@ -230,6 +231,7 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
+  "catalog:admin_override",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [
