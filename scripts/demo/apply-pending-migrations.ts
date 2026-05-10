@@ -18,6 +18,11 @@ import { resolve } from "node:path";
 import pg from "pg";
 
 const PENDING = [
+  // V3.0 D-300 MFA columns (profiles.mfa_secret/mfa_recovery_codes/mfa_enrolled_at)
+  // — required by lib/auth/getCurrentUser.ts. Was missing from PR #48 list.
+  "supabase/migrations/20260510120000_profiles_mfa_secret.sql",
+  // V3.0 D-209 — profiles.mfa_verified_at
+  "supabase/migrations/20260509220000_profiles_mfa_verified_at.sql",
   // V3.0 (PR #48 set — apply if not already on live)
   "supabase/migrations/20260510120100_org_session_revocations.sql",
   "supabase/migrations/20260510120200_subscription_plans_and_stripe.sql",
