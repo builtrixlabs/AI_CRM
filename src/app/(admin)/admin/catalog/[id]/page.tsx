@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
 import { getPropertyDetail, type UnitStatus } from "@/lib/catalog/queries";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,13 @@ export default async function CatalogPropertyPage(props: {
   const detail = await getPropertyDetail(user.org_id, id);
   if (!detail) notFound();
 
+  const canEditProperty = BASE_ROLE_PERMS[user.profile.base_role].has(
+    "properties:edit"
+  );
+  const canEditUnit = BASE_ROLE_PERMS[user.profile.base_role].has(
+    "units:edit"
+  );
+
   return (
     <div className="space-y-6">
       <Link href="/admin/catalog" className="text-sm text-neutral-600 hover:underline">
@@ -51,8 +59,20 @@ export default async function CatalogPropertyPage(props: {
       </Link>
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{detail.name}</h1>
-        <p className="text-sm text-neutral-600">{detail.city}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">{detail.name}</h1>
+            <p className="text-sm text-neutral-600">{detail.city}</p>
+          </div>
+          {canEditProperty && (
+            <Link
+              href={`/admin/catalog/${id}/edit`}
+              className="inline-flex items-center justify-center rounded-md text-xs font-medium border border-neutral-300 px-3 py-1.5 hover:bg-neutral-50"
+            >
+              Edit property
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {detail.rera_number ? (
             <Badge
@@ -106,6 +126,7 @@ export default async function CatalogPropertyPage(props: {
                   <TableHead>Carpet</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Status</TableHead>
+                  {canEditUnit && <TableHead className="w-12"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -125,6 +146,16 @@ export default async function CatalogPropertyPage(props: {
                         {u.status}
                       </span>
                     </TableCell>
+                    {canEditUnit && (
+                      <TableCell className="text-right">
+                        <Link
+                          href={`/admin/catalog/${id}/units/${u.id}/edit`}
+                          className="text-xs text-blue-700 hover:underline"
+                        >
+                          Edit
+                        </Link>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
