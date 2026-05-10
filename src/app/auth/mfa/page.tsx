@@ -21,6 +21,8 @@ const ERROR_COPY: Record<string, string> = {
     "That recovery code has already been used. Try a different one.",
   invalid_state:
     "We couldn't read your enrollment. Reach out to your admin to reset MFA.",
+  rate_limited:
+    "Too many attempts from this address. Wait 15 minutes and try again.",
 };
 
 export default async function MfaVerifyPage(props: {

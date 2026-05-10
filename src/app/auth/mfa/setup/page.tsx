@@ -129,6 +129,12 @@ async function renderPage(opts: {
               secret — please scan the QR below and try again.
             </div>
           )}
+          {opts.errorCode === "rate_limited" && (
+            <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              Too many attempts from this address. Wait 15 minutes and try
+              again.
+            </div>
+          )}
 
           <section>
             <h2 className="text-sm font-medium mb-2">

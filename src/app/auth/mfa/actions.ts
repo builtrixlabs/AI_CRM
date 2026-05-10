@@ -12,6 +12,7 @@ import {
   markCodeUsed,
   RECOVERY_CODE_PATTERN,
 } from "@/lib/auth/recovery-codes";
+import { mfaVerifyBucket } from "@/lib/auth/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const MFA_PATH = "/auth/mfa";
@@ -92,8 +93,13 @@ export async function verifyTotpAction(
     redirect(`/auth/mfa/setup?return=${encodeURIComponent(safeReturn(returnTo))}`);
   }
 
-  const code = String(formData.get("code") ?? "").trim();
   const ret = safeReturn(returnTo);
+  const ip = await callerIp();
+  if (!mfaVerifyBucket.consume(ip ?? user.user.id).allowed) {
+    redirect(mfaRedirect(ret, "rate_limited"));
+  }
+
+  const code = String(formData.get("code") ?? "").trim();
 
   const admin = getSupabaseAdmin();
   const { data: prof } = await admin
@@ -132,16 +138,20 @@ export async function verifyRecoveryAction(
     redirect(`/auth/mfa/setup?return=${encodeURIComponent(safeReturn(returnTo))}`);
   }
 
+  const ret = safeReturn(returnTo);
+  const ip = await callerIp();
+  if (!mfaVerifyBucket.consume(ip ?? user.user.id).allowed) {
+    redirect(mfaRedirect(ret, "rate_limited"));
+  }
+
   const code = String(formData.get("recovery_code") ?? "")
     .trim()
     .toUpperCase();
-  const ret = safeReturn(returnTo);
 
   if (!RECOVERY_CODE_PATTERN.test(code)) {
     redirect(mfaRedirect(ret, "invalid_recovery"));
   }
 
-  const ip = await callerIp();
   const result = await markCodeUsed(user.user.id, code, ip);
   if (!result.ok) {
     await logVerifyFailed(user.user.id, user.org_id, "recovery_code");

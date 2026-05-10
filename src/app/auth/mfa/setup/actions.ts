@@ -1,7 +1,9 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { mfaVerifyBucket } from "@/lib/auth/rate-limit";
 import {
   decryptSecret,
   verifyCode,
@@ -34,9 +36,17 @@ export async function confirmEnrollmentAction(
     redirect("/auth/mfa");
   }
 
-  const code = String(formData.get("code") ?? "").trim();
   const ret = safeReturn(returnTo);
+  const h = await headers();
+  const ip =
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    h.get("x-real-ip") ??
+    user.user.id;
+  if (!mfaVerifyBucket.consume(ip).allowed) {
+    redirect(setupRedirect(ret, "rate_limited"));
+  }
 
+  const code = String(formData.get("code") ?? "").trim();
   const admin = getSupabaseAdmin();
   const { data: prof } = await admin
     .from("profiles")

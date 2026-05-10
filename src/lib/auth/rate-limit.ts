@@ -75,6 +75,20 @@ export const loginBucket = new TokenBucket({
   refill_window_ms: LOGIN_WINDOW_SECONDS * 1000,
 });
 
+export const MFA_VERIFY_LIMIT = 5;
+export const MFA_VERIFY_WINDOW_SECONDS = 15 * 60;
+
+/**
+ * Process-singleton MFA verify bucket. Used by /auth/mfa and
+ * /auth/mfa/setup server actions to throttle code attempts at
+ * 5 / 15min / IP. Multi-instance correctness lands with D-301
+ * (KV-backed limiter).
+ */
+export const mfaVerifyBucket = new TokenBucket({
+  capacity: MFA_VERIFY_LIMIT,
+  refill_window_ms: MFA_VERIFY_WINDOW_SECONDS * 1000,
+});
+
 export function ipKey(req: Request | { headers: Headers }): string {
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0]?.trim() ?? "unknown";
