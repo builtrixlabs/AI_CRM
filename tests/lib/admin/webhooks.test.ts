@@ -144,16 +144,22 @@ describe("toggleEndpoint", () => {
   });
 });
 
-describe("sendTestDelivery", () => {
-  it("writes synthetic delivery + audits", async () => {
+describe("sendTestDelivery (D-311 — enqueues pending; Inngest worker delivers)", () => {
+  it("inserts a pending delivery row + audits the enqueue", async () => {
     const env = makeWriteClient();
     const r = await sendTestDelivery(EP, ORG, USER, env.client as never);
     expect(r.ok).toBe(true);
     expect(env.inserts.webhook_deliveries).toHaveLength(1);
     const row = env.inserts.webhook_deliveries[0] as Record<string, unknown>;
-    expect(row.status_code).toBe(200);
+    // No HTTP fired here — that's the worker's job. Row sits as pending.
+    expect(row.status).toBe("pending");
+    expect(row.attempt_number).toBe(1);
+    expect(row.status_code).toBeNull();
     expect(row.event_kind).toBe("test.ping");
+    expect(typeof row.next_retry_at).toBe("string");
     expect(env.inserts.audit_log).toHaveLength(1);
+    const audit = env.inserts.audit_log[0] as { action: string };
+    expect(audit.action).toBe("webhook_test_delivery_enqueued");
   });
 });
 
