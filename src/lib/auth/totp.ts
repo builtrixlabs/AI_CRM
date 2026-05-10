@@ -91,3 +91,23 @@ export function verifyCode(
   const delta = totp.validate({ token: code, timestamp: now_ms, window: 1 });
   return delta !== null;
 }
+
+/**
+ * Build an `otpauth://totp/...` URL for a stored base32 secret. Used by
+ * the setup page when re-rendering an in-progress enrollment without
+ * regenerating the secret.
+ */
+export function buildOtpauthUrl(
+  secret_b32: string,
+  label: string,
+  issuer: string
+): string {
+  return new TOTP({
+    issuer,
+    label,
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret: Secret.fromBase32(secret_b32),
+  }).toString();
+}

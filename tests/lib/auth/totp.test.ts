@@ -5,6 +5,7 @@ import {
   encryptSecret,
   decryptSecret,
   verifyCode,
+  buildOtpauthUrl,
   KEY_VERSION,
 } from "@/lib/auth/totp";
 
@@ -148,5 +149,22 @@ describe("totp.verifyCode", () => {
     const now = 1_700_000_000_000;
     const codeForA = makeTotp(a.secret_b32).generate({ timestamp: now });
     expect(verifyCode(b.secret_b32, codeForA, now)).toBe(false);
+  });
+});
+
+describe("totp.buildOtpauthUrl", () => {
+  it("produces a URL identical to generateSecret().otpauth_url for the same inputs", () => {
+    const { secret_b32, otpauth_url } = generateSecret();
+    const fromGen = otpauth_url("user@example.com", "Builtrix CRM");
+    const fromBuild = buildOtpauthUrl(secret_b32, "user@example.com", "Builtrix CRM");
+    expect(fromBuild).toBe(fromGen);
+  });
+
+  it("encodes label + issuer correctly", () => {
+    const { secret_b32 } = generateSecret();
+    const url = buildOtpauthUrl(secret_b32, "u@x.io", "Acme");
+    expect(url).toMatch(/^otpauth:\/\/totp\//);
+    expect(url).toContain("issuer=Acme");
+    expect(url).toContain("u%40x.io");
   });
 });

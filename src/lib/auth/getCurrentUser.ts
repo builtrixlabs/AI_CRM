@@ -10,6 +10,8 @@ type ProfileRow = {
   phone?: string | null;
   notification_prefs?: Record<string, unknown> | null;
   theme?: string | null;
+  mfa_verified_at?: string | null;
+  mfa_enrolled_at?: string | null;
 };
 
 type AppRoleRow = {
@@ -41,7 +43,7 @@ export async function getCurrentUser(
   const { data: profile, error: profileError } = (await c
     .from("profiles")
     .select(
-      "id, display_name, base_role, organization_id, phone, notification_prefs, theme"
+      "id, display_name, base_role, organization_id, phone, notification_prefs, theme, mfa_verified_at, mfa_enrolled_at"
     )
     .eq("id", user.id)
     .single()) as { data: ProfileRow | null; error: unknown };
@@ -83,6 +85,8 @@ export async function getCurrentUser(
           | import("./types").NotificationPrefs
           | undefined) ?? {},
       theme,
+      mfa_verified_at: profile.mfa_verified_at ?? null,
+      mfa_enrolled_at: profile.mfa_enrolled_at ?? null,
     },
     org_id: profile.organization_id,
     workspace_ids,

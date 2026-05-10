@@ -87,10 +87,13 @@ describe("getCurrentUser", () => {
         display_name: "Rep One",
         base_role: "sales_rep",
         // Optional profile fields default through the mapper:
-        //   phone -> null, notification_prefs -> {}, theme -> "system".
+        //   phone -> null, notification_prefs -> {}, theme -> "system",
+        //   mfa_* -> null (D-300).
         phone: null,
         notification_prefs: {},
         theme: "system",
+        mfa_verified_at: null,
+        mfa_enrolled_at: null,
       },
       org_id: "org-1",
       workspace_ids: ["ws-1"], // null workspace_ids excluded

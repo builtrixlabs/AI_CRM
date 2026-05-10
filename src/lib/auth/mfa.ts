@@ -2,35 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getFlag } from "@/lib/platform/flags";
 
-const SENSITIVE_PATTERNS: RegExp[] = [
-  /^\/platform(\/|$)/,
-  /^\/admin\/billing(\/|$)/,
-  /^\/admin\/integrations(\/|$)/,
-  /^\/admin\/webhooks(\/|$)/,
-  /^\/settings\/users(\/|$)/,
-  /^\/settings\/roles(\/|$)/,
-];
-
-export function defaultFreshnessMs(): number {
-  const fromEnv = Number(process.env.MFA_FRESHNESS_HOURS);
-  const hours = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 8;
-  return hours * 60 * 60 * 1000;
-}
-
-export function isMfaFresh(
-  verified_at: string | null | undefined,
-  now: number = Date.now(),
-  freshness_ms: number = defaultFreshnessMs()
-): boolean {
-  if (!verified_at) return false;
-  const t = new Date(verified_at).getTime();
-  if (!Number.isFinite(t)) return false;
-  return now - t < freshness_ms;
-}
-
-export function isSensitiveRoute(pathname: string): boolean {
-  return SENSITIVE_PATTERNS.some((re) => re.test(pathname));
-}
+export { isSensitiveRoute } from "./sensitive-routes";
+export { defaultFreshnessMs, isMfaFresh } from "./freshness";
 
 /**
  * Demo bypass: set MFA_DEMO_MODE=true (env) OR set platform flag
