@@ -2,6 +2,124 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { PLAN_TIER_ORDER, type PlanTier } from "./plan-tiers";
 
+/**
+ * D-312 — time-series analytics over a configurable window.
+ *
+ * One bucket per UTC day: new bookings, deals entering the qualifying
+ * funnel, site visits completed / no-show. Shapes per spec AC-4.
+ *
+ * Pure-ish: takes an injectable client; default reads via admin so
+ * super-admin pages can render without per-tenant scoping.
+ */
+export type AnalyticsBucket = {
+  date: string;
+  bookings: number;
+  qualified_starts: number;
+  sv_completed: number;
+  sv_no_show: number;
+};
+
+const FUNNEL_STATES = new Set([
+  "qualified",
+  "site_visit_scheduled",
+  "site_visit_done",
+  "negotiation",
+  "booked",
+]);
+
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function emptyBuckets(days: number): AnalyticsBucket[] {
+  const out: AnalyticsBucket[] = [];
+  const now = new Date();
+  now.setUTCHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setUTCDate(now.getUTCDate() - i);
+    out.push({
+      date: isoDay(d),
+      bookings: 0,
+      qualified_starts: 0,
+      sv_completed: 0,
+      sv_no_show: 0,
+    });
+  }
+  return out;
+}
+
+export async function getKpisOverWindow(
+  days: number,
+  client: SupabaseClient = getSupabaseAdmin()
+): Promise<AnalyticsBucket[]> {
+  const buckets = emptyBuckets(days);
+  const byDate = new Map(buckets.map((b) => [b.date, b]));
+
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+
+  // Deals: count by state transitions in the window. We use updated_at
+  // as the proxy for "state changed on this day" — accurate for v3 MVP
+  // because deal state is the dominant axis of mutation. A V3.x
+  // refinement could join audit_log for true transition history.
+  const dealsRes = await client
+    .from("nodes")
+    .select("data, updated_at")
+    .eq("kind", "deal")
+    .gte("updated_at", since.toISOString())
+    .is("deleted_at", null);
+  if (!dealsRes.error && dealsRes.data) {
+    for (const row of dealsRes.data as Array<{
+      data: { state?: string };
+      updated_at: string;
+    }>) {
+      const day = row.updated_at.slice(0, 10);
+      const b = byDate.get(day);
+      if (!b) continue;
+      const state = row.data?.state;
+      if (state === "booked") b.bookings += 1;
+      if (state && FUNNEL_STATES.has(state)) b.qualified_starts += 1;
+    }
+  }
+
+  // Site visits: count completed / no-show by scheduled_at day in window.
+  const svRes = await client
+    .from("nodes")
+    .select("data")
+    .eq("kind", "site_visit")
+    .gte("updated_at", since.toISOString())
+    .is("deleted_at", null);
+  if (!svRes.error && svRes.data) {
+    for (const row of svRes.data as Array<{
+      data: { state?: string; scheduled_at?: string };
+    }>) {
+      const sa = row.data?.scheduled_at;
+      if (!sa) continue;
+      const day = sa.slice(0, 10);
+      const b = byDate.get(day);
+      if (!b) continue;
+      if (row.data.state === "completed") b.sv_completed += 1;
+      if (row.data.state === "no_show") b.sv_no_show += 1;
+    }
+  }
+
+  return buckets;
+}
+
+export function bucketsToCsv(
+  kpi: "bookings" | "qualified_starts" | "sv_completed" | "sv_no_show",
+  buckets: AnalyticsBucket[]
+): string {
+  const header = `date,${kpi}\n`;
+  const rows = buckets
+    .map((b) => `${b.date},${b[kpi]}`)
+    .join("\n");
+  return header + rows + "\n";
+}
+
+
 export type SiteVisitStateCounts = {
   scheduled: number;
   confirmed: number;

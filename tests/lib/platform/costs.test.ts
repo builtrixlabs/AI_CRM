@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getOrgCosts } from "@/lib/platform/costs";
+import { categorizePath, getOrgCosts } from "@/lib/platform/costs";
 
 const ORG_A = "11111111-2222-4333-8444-555555555555";
 const ORG_B = "22222222-3333-4444-8555-666666666666";
@@ -11,7 +11,7 @@ function makeClient(opts: {
     tokens_in: number;
     tokens_out: number;
   }>;
-  api_calls: Array<{ organization_id: string | null }>;
+  api_calls: Array<{ organization_id: string | null; path?: string | null }>;
 }) {
   const orgChain = {
     select: vi.fn(() => orgChain),
@@ -69,12 +69,15 @@ describe("getOrgCosts", () => {
     expect(b.tokens_out_30d).toBe(10);
     expect(b.api_calls_30d).toBe(1);
 
-    expect(summary.totals).toEqual({
+    expect(summary.totals).toMatchObject({
       total_orgs: 2,
       total_tokens_in_30d: 1250,
       total_tokens_out_30d: 610,
       total_api_calls_30d: 4,
     });
+    expect(summary.totals.total_voice_iq_inbox_30d).toBeGreaterThanOrEqual(0);
+    expect(summary.totals.total_voice_iq_lookup_30d).toBeGreaterThanOrEqual(0);
+    expect(summary.totals.total_other_30d).toBeGreaterThanOrEqual(0);
   });
 
   it("returns empty totals when no orgs", async () => {
@@ -93,5 +96,46 @@ describe("getOrgCosts", () => {
     const summary = await getOrgCosts(client as never);
     expect(summary.rows[0].tokens_in_30d).toBe(0);
     expect(summary.rows[0].api_calls_30d).toBe(0);
+  });
+
+  it("D-312 — categorizes calls into voice_iq_inbox / voice_iq_lookup / other", async () => {
+    const client = makeClient({
+      orgs: [{ id: ORG_A, slug: "a", name: "Alpha", plan_tier: "professional" }],
+      tokens: [],
+      api_calls: [
+        { organization_id: ORG_A, path: "/api/events/inbox" },
+        { organization_id: ORG_A, path: "/api/events/inbox/" },
+        { organization_id: ORG_A, path: "/api/admin/leads/lookup?phone=x" },
+        { organization_id: ORG_A, path: "/api/auth/rate-check" },
+        { organization_id: ORG_A, path: "/api/admin/leads/lookup" },
+        { organization_id: ORG_A, path: null },
+      ],
+    });
+    const summary = await getOrgCosts(client as never);
+    const row = summary.rows[0];
+    expect(row.api_calls_30d).toBe(6);
+    expect(row.calls_voice_iq_inbox_30d).toBe(2);
+    expect(row.calls_voice_iq_lookup_30d).toBe(2);
+    expect(row.calls_other_30d).toBe(2);
+    expect(summary.totals.total_voice_iq_inbox_30d).toBe(2);
+    expect(summary.totals.total_voice_iq_lookup_30d).toBe(2);
+    expect(summary.totals.total_other_30d).toBe(2);
+  });
+});
+
+describe("categorizePath", () => {
+  it.each([
+    ["/api/events/inbox", "voice_iq_inbox"],
+    ["/api/events/inbox?x=1", "voice_iq_inbox"],
+    ["/api/events/inbox/", "voice_iq_inbox"],
+    ["/api/admin/leads/lookup", "voice_iq_lookup"],
+    ["/api/admin/leads/lookup?phone=x", "voice_iq_lookup"],
+    ["/api/auth/rate-check", "other"],
+    ["/api/stripe/webhook", "other"],
+    ["", "other"],
+    [null, "other"],
+    [undefined, "other"],
+  ])("%s -> %s", (path, expected) => {
+    expect(categorizePath(path as string | null | undefined)).toBe(expected);
   });
 });
