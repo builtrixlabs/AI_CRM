@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { lookupBucket } from "@/lib/auth/rate-limit";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
@@ -72,6 +73,7 @@ beforeEach(() => {
   const aud = makeAuditClient();
   mocks.getSupabaseAdmin.mockReturnValue(aud.client);
   mocks.lookupLead.mockResolvedValue(null);
+  lookupBucket._reset();
 });
 
 describe("GET /api/admin/leads/lookup", () => {
@@ -189,5 +191,30 @@ describe("GET /api/admin/leads/lookup", () => {
       })
     );
     expect(res.status).toBe(200);
+  });
+
+  it("D-301 — 429 with retry-after header after 5/15min/IP exhausted", async () => {
+    mocks.findOrgByVoiceIqSecret.mockResolvedValue(ORG_A);
+    mocks.lookupLead.mockResolvedValue({
+      lead_node_id: LEAD,
+      workspace_id: WS,
+    });
+    const url = new URL("http://localhost/api/admin/leads/lookup");
+    url.searchParams.set("external_id", "x");
+    url.searchParams.set("org_id", ORG_A);
+    const headers = new Headers();
+    headers.set("authorization", `Bearer ${"a".repeat(64)}`);
+    headers.set("x-forwarded-for", "203.0.113.99");
+
+    const NextRequest = (await import("next/server")).NextRequest;
+    for (let i = 0; i < 5; i++) {
+      const res = await GET(new NextRequest(url, { headers }));
+      expect(res.status).toBe(200);
+    }
+    const blocked = await GET(new NextRequest(url, { headers }));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toMatch(/^\d+$/);
+    const body = await blocked.json();
+    expect(body.error).toBe("rate_limited");
   });
 });

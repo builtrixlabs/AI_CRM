@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MfaFreshnessBanner } from "@/components/auth/mfa-freshness-banner";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
-import { isDemoBypassActive, isMfaFresh } from "@/lib/auth/mfa";
 import { getBillingSnapshot } from "@/lib/admin/billing";
 import { UpgradeForm } from "./upgrade-form";
 
@@ -49,20 +47,10 @@ export default async function BillingPage() {
     redirect("/403");
   }
 
-  const [snap, demoBypass] = await Promise.all([
-    getBillingSnapshot(user.org_id),
-    isDemoBypassActive(),
-  ]);
-  const fresh = isMfaFresh(user.profile.mfa_verified_at ?? null);
+  const snap = await getBillingSnapshot(user.org_id);
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <MfaFreshnessBanner
-        verified_at={user.profile.mfa_verified_at ?? null}
-        fresh={fresh}
-        demo_bypass={demoBypass}
-        return_to="/admin/billing"
-      />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
         <p className="text-sm text-neutral-600">

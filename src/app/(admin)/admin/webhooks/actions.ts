@@ -6,6 +6,8 @@ import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
 import {
   createEndpoint,
   deleteEndpoint,
+  reenableEndpoint,
+  resendDelivery,
   sendTestDelivery,
   toggleEndpoint,
 } from "@/lib/admin/webhooks";
@@ -83,4 +85,34 @@ export async function testWebhookAction(id: string): Promise<WebhookActionResult
   if (!r.ok) return { ok: false, error: "internal", message: r.error };
   revalidatePath("/admin/webhooks");
   return { ok: true, id: r.delivery_id };
+}
+
+/** D-311 — enqueue a fresh attempt of a past delivery. */
+export async function resendDeliveryAction(
+  delivery_id: string
+): Promise<WebhookActionResult> {
+  const g = await gate();
+  if (!g) return { ok: false, error: "permission" };
+  const r = await resendDelivery(delivery_id, g.org_id, g.user_id);
+  if (!r.ok) {
+    return {
+      ok: false,
+      error: r.error === "not_found" ? "validation" : "internal",
+      message: r.error,
+    };
+  }
+  revalidatePath("/admin/webhooks");
+  return { ok: true, id: r.delivery_id };
+}
+
+/** D-311 — re-enable an auto-disabled endpoint. */
+export async function reenableEndpointAction(
+  endpoint_id: string
+): Promise<WebhookActionResult> {
+  const g = await gate();
+  if (!g) return { ok: false, error: "permission" };
+  const r = await reenableEndpoint(endpoint_id, g.org_id, g.user_id);
+  if (!r.ok) return { ok: false, error: "internal", message: r.error };
+  revalidatePath("/admin/webhooks");
+  return { ok: true };
 }

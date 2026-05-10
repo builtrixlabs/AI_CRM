@@ -7,6 +7,7 @@ import {
   lookupLead,
 } from "@/lib/integrations/voice-iq/lookup";
 import { withApiAudit } from "@/lib/api/audit-wrapper";
+import { ipKey, lookupBucket } from "@/lib/auth/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,26 @@ async function authBearer(req: NextRequest, claimedOrgId: string): Promise<AuthO
 }
 
 async function lookupHandler(req: NextRequest): Promise<NextResponse> {
+  // D-301 — rate-limit per IP (5 / 15min). Defense-in-depth against a
+  // leaked Bearer token; the per-org Voice IQ secret is the actual auth.
+  const ip = ipKey(req);
+  const rate = await lookupBucket.consume(ip);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "rate_limited",
+        retry_after_seconds: Math.ceil(rate.retry_after_ms / 1000),
+      },
+      {
+        status: 429,
+        headers: {
+          "retry-after": String(Math.ceil(rate.retry_after_ms / 1000)),
+        },
+      }
+    );
+  }
+
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
     external_id: url.searchParams.get("external_id") ?? undefined,

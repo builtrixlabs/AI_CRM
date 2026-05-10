@@ -1,19 +1,41 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Sparkline } from "@/components/platform/sparkline";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
-import { getPlatformKpis } from "@/lib/platform/analytics";
+import { getKpisOverWindow, getPlatformKpis } from "@/lib/platform/analytics";
 import { PLAN_TIERS, PLAN_TIER_ORDER } from "@/lib/platform/plan-tiers";
+import { CsvButton } from "./csv-button";
 
 export const dynamic = "force-dynamic";
 
 const fmt = new Intl.NumberFormat("en-US");
+const VALID_DAYS = [30, 60, 90] as const;
+type WindowDays = (typeof VALID_DAYS)[number];
 
-export default async function AnalyticsPage() {
+function parseDays(raw: string | string[] | undefined): WindowDays {
+  const n = typeof raw === "string" ? Number(raw) : NaN;
+  return (VALID_DAYS as readonly number[]).includes(n) ? (n as WindowDays) : 30;
+}
+
+export default async function AnalyticsPage(props: {
+  searchParams: Promise<{ days?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/auth/sign-in");
   if (user.profile.base_role !== "super_admin") redirect("/dashboard");
 
-  const k = await getPlatformKpis();
+  const sp = await props.searchParams;
+  const days = parseDays(sp.days);
+
+  const [k, buckets] = await Promise.all([
+    getPlatformKpis(),
+    getKpisOverWindow(days),
+  ]);
+  const bookings = buckets.map((b) => b.bookings);
+  const svCompleted = buckets.map((b) => b.sv_completed);
+  const totalBookings = bookings.reduce((s, n) => s + n, 0);
+  const totalSv = svCompleted.reduce((s, n) => s + n, 0);
 
   return (
     <div className="space-y-6">
@@ -23,6 +45,78 @@ export default async function AnalyticsPage() {
           Real-estate-relevant cross-org metrics. Refreshes on every page load.
         </p>
       </header>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-neutral-700">
+            Trends ({days}d)
+          </h2>
+          <div className="flex gap-1 text-xs">
+            {VALID_DAYS.map((d) => (
+              <Link
+                key={d}
+                href={`/platform/analytics?days=${d}`}
+                className={`rounded border px-2 py-1 ${
+                  d === days
+                    ? "border-neutral-900 bg-neutral-900 text-white"
+                    : "border-neutral-300 text-neutral-700"
+                }`}
+              >
+                {d}d
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">Bookings / day</CardTitle>
+              <CsvButton kpi="bookings" days={days} />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">
+                {fmt.format(totalBookings)}
+              </p>
+              <p className="text-xs text-neutral-500 pt-1">
+                total in last {days} days
+              </p>
+              <Sparkline
+                values={bookings}
+                width={280}
+                height={48}
+                strokeColor="#0f766e"
+                fillColor="#14b8a6"
+                className="mt-3 text-emerald-700"
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">
+                Site visits completed / day
+              </CardTitle>
+              <CsvButton kpi="sv_completed" days={days} />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">
+                {fmt.format(totalSv)}
+              </p>
+              <p className="text-xs text-neutral-500 pt-1">
+                total in last {days} days
+              </p>
+              <Sparkline
+                values={svCompleted}
+                width={280}
+                height={48}
+                strokeColor="#1e40af"
+                fillColor="#3b82f6"
+                className="mt-3 text-blue-700"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>

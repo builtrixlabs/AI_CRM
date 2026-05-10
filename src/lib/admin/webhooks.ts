@@ -181,9 +181,12 @@ export async function deleteEndpoint(
 }
 
 /**
- * Stub delivery — writes a synthetic webhook_deliveries row with status=200
- * and a small randomized latency so the UI demoes end-to-end. Real outbound
- * worker is V3.
+ * D-311 — enqueue a `test.ping` delivery. The Inngest cron (every
+ * minute) picks it up within ~60s, signs the body with the endpoint's
+ * secret, and POSTs it. Outcome lands back in the webhook_deliveries
+ * row (status, status_code, latency, response_preview).
+ *
+ * Replaces the v2 stub that wrote status=200 directly without firing HTTP.
  */
 export async function sendTestDelivery(
   endpoint_id: string,
@@ -191,19 +194,17 @@ export async function sendTestDelivery(
   user_id: string,
   client: SupabaseClient = getSupabaseAdmin()
 ): Promise<Result<{ delivery_id: string }>> {
-  const { data, error } = await client
-    .from("webhook_deliveries")
-    .insert({
-      organization_id,
+  const { enqueueDelivery } = await import("@/lib/webhooks/deliver");
+  const r = await enqueueDelivery(
+    {
       endpoint_id,
+      organization_id,
       event_kind: "test.ping",
-      status_code: 200,
-      latency_ms: 28 + Math.floor(Math.random() * 50),
-      response_preview: "{\"ok\":true,\"message\":\"stub delivery — real worker is V3\"}",
-    })
-    .select("id")
-    .single();
-  if (error || !data) return { ok: false, error: error?.message ?? "insert_failed" };
+      payload: { source: "test_button", triggered_by: user_id },
+    },
+    client
+  );
+  if (!r.ok) return r;
 
   await client.from("audit_log").insert({
     actor_id: user_id,
@@ -212,10 +213,99 @@ export async function sendTestDelivery(
     organization_id,
     workspace_id: null,
     table_name: "webhook_deliveries",
-    record_id: (data as { id: string }).id,
-    action: "webhook_test_delivery_stub",
+    record_id: r.delivery_id,
+    action: "webhook_test_delivery_enqueued",
     diff: { endpoint_id },
   });
 
-  return { ok: true, delivery_id: (data as { id: string }).id };
+  return { ok: true, delivery_id: r.delivery_id };
+}
+
+/**
+ * D-311 — resend a past delivery by enqueueing a fresh `pending` row
+ * with the same payload + event_kind. Original row is left untouched
+ * (so the audit trail stays intact).
+ */
+export async function resendDelivery(
+  delivery_id: string,
+  organization_id: string,
+  user_id: string,
+  client: SupabaseClient = getSupabaseAdmin()
+): Promise<Result<{ delivery_id: string }>> {
+  const { data: orig, error: lookupErr } = await client
+    .from("webhook_deliveries")
+    .select("endpoint_id, event_kind, payload")
+    .eq("id", delivery_id)
+    .eq("organization_id", organization_id)
+    .maybeSingle();
+  if (lookupErr || !orig) {
+    return { ok: false, error: "not_found" };
+  }
+  const o = orig as {
+    endpoint_id: string;
+    event_kind: string;
+    payload: Record<string, unknown>;
+  };
+
+  const { enqueueDelivery } = await import("@/lib/webhooks/deliver");
+  const r = await enqueueDelivery(
+    {
+      endpoint_id: o.endpoint_id,
+      organization_id,
+      event_kind: o.event_kind,
+      payload: o.payload,
+    },
+    client
+  );
+  if (!r.ok) return r;
+
+  await client.from("audit_log").insert({
+    actor_id: user_id,
+    actor_type: "user",
+    actor_role: "org_admin",
+    organization_id,
+    workspace_id: null,
+    table_name: "webhook_deliveries",
+    record_id: r.delivery_id,
+    action: "webhook_delivery_resent",
+    diff: { resent_from: delivery_id, endpoint_id: o.endpoint_id },
+  });
+
+  return { ok: true, delivery_id: r.delivery_id };
+}
+
+/**
+ * D-311 — re-enable an auto-disabled endpoint. Clears `disabled_at`
+ * and zeroes `consecutive_failures`. Org-admin only.
+ */
+export async function reenableEndpoint(
+  endpoint_id: string,
+  organization_id: string,
+  user_id: string,
+  client: SupabaseClient = getSupabaseAdmin()
+): Promise<Result> {
+  const { error } = await client
+    .from("webhook_endpoints")
+    .update({
+      disabled_at: null,
+      consecutive_failures: 0,
+      updated_at: new Date().toISOString(),
+      updated_by: user_id,
+    })
+    .eq("id", endpoint_id)
+    .eq("organization_id", organization_id);
+  if (error) return { ok: false, error: error.message };
+
+  await client.from("audit_log").insert({
+    actor_id: user_id,
+    actor_type: "user",
+    actor_role: "org_admin",
+    organization_id,
+    workspace_id: null,
+    table_name: "webhook_endpoints",
+    record_id: endpoint_id,
+    action: "webhook_endpoint_reenabled",
+    diff: {},
+  });
+  return { ok: true };
 }
