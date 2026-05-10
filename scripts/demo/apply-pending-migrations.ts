@@ -18,10 +18,25 @@ import { resolve } from "node:path";
 import pg from "pg";
 
 const PENDING = [
+  // V3.0 (PR #48 set — apply if not already on live)
   "supabase/migrations/20260510120100_org_session_revocations.sql",
   "supabase/migrations/20260510120200_subscription_plans_and_stripe.sql",
-  "supabase/migrations/20260510120400_audit_retention_and_prune.sql",
+  "supabase/migrations/20260510120300_webhook_delivery_real.sql",
+  // 20260510120400_audit_retention_and_prune.sql is superseded by the
+  // 20260510130500_fix_d312_prune_column_names.sql migration below, which
+  // creates the corrected prune_* functions + ts indexes. The original V3.0
+  // migration has wrong column names ('created_at' / 'received_at') and
+  // will fail on apply. Skipping it here.
   "supabase/migrations/20260510120500_agent_approval_queue.sql",
+  // V3.x (this v3 branch)
+  "supabase/migrations/20260510130000_org_retention_overrides.sql",
+  "supabase/migrations/20260510130100_webhook_secret_encryption.sql",
+  "supabase/migrations/20260510130200_hard_delete_org.sql",
+  "supabase/migrations/20260510130300_agent_token_budget.sql",
+  "supabase/migrations/20260510130400_tier_aware_retention.sql",
+  "supabase/migrations/20260510130500_fix_d312_prune_column_names.sql",
+  "supabase/migrations/20260510130600_fix_retention_rpc_platform_flags.sql",
+  "supabase/migrations/20260510130700_fix_d312_prune_webhook_deliveries.sql",
 ];
 
 async function main() {
