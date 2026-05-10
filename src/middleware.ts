@@ -90,10 +90,18 @@ export async function middleware(request: NextRequest) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // redirect
+  // redirect — decision.target may be "/path" or "/path?query=value".
+  // Assigning the whole string to url.pathname URL-encodes the "?" to "%3F"
+  // and loses the query. Split first.
   const url = request.nextUrl.clone();
-  url.pathname = decision.target;
-  url.search = "";
+  const qIdx = decision.target.indexOf("?");
+  if (qIdx === -1) {
+    url.pathname = decision.target;
+    url.search = "";
+  } else {
+    url.pathname = decision.target.slice(0, qIdx);
+    url.search = decision.target.slice(qIdx); // includes leading "?"
+  }
   return NextResponse.redirect(url);
 }
 
