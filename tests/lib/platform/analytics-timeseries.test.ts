@@ -8,6 +8,7 @@ import {
 function makeClient(opts: {
   deals?: Array<{ data: { state?: string }; updated_at: string }>;
   site_visits?: Array<{ data: { state?: string; scheduled_at?: string } }>;
+  leads?: Array<{ created_at: string }>;
 }) {
   return {
     from: vi.fn((table: string) => ({
@@ -20,6 +21,8 @@ function makeClient(opts: {
                   table === "nodes"
                     ? val === "deal"
                       ? opts.deals ?? []
+                      : val === "lead"
+                      ? opts.leads ?? []
                       : opts.site_visits ?? []
                     : [],
                 error: null,
@@ -135,6 +138,8 @@ describe("analytics.bucketsToCsv", () => {
       qualified_starts: 3,
       sv_completed: 0,
       sv_no_show: 1,
+      lead_starts: 4,
+      conversion_pct: 25.0,
     },
     {
       date: "2026-05-09",
@@ -142,6 +147,8 @@ describe("analytics.bucketsToCsv", () => {
       qualified_starts: 5,
       sv_completed: 2,
       sv_no_show: 0,
+      lead_starts: 8,
+      conversion_pct: 50.0,
     },
   ];
 
@@ -165,5 +172,85 @@ describe("analytics.bucketsToCsv", () => {
   it("emits header + trailing newline even on empty buckets", () => {
     const csv = bucketsToCsv("bookings", []);
     expect(csv).toBe("date,bookings\n\n");
+  });
+
+  it("emits conversion_pct column with empty cell on null", () => {
+    const withNull: AnalyticsBucket[] = [
+      {
+        date: "2026-05-08",
+        bookings: 0,
+        qualified_starts: 0,
+        sv_completed: 0,
+        sv_no_show: 0,
+        lead_starts: 0,
+        conversion_pct: null,
+      },
+      {
+        date: "2026-05-09",
+        bookings: 1,
+        qualified_starts: 1,
+        sv_completed: 0,
+        sv_no_show: 0,
+        lead_starts: 4,
+        conversion_pct: 25.0,
+      },
+    ];
+    expect(bucketsToCsv("conversion_pct", withNull)).toBe(
+      "date,conversion_pct\n2026-05-08,\n2026-05-09,25\n"
+    );
+    expect(bucketsToCsv("lead_starts", withNull)).toBe(
+      "date,lead_starts\n2026-05-08,0\n2026-05-09,4\n"
+    );
+  });
+});
+
+describe("analytics.getKpisOverWindow conversion_pct", () => {
+  it("computes conversion_pct = bookings / lead_starts, one decimal", async () => {
+    const today = todayUtc();
+    const client = makeClient({
+      deals: [
+        { data: { state: "booked" }, updated_at: `${today}T10:00:00Z` },
+        { data: { state: "booked" }, updated_at: `${today}T12:00:00Z` },
+      ],
+      leads: [
+        { created_at: `${today}T08:00:00Z` },
+        { created_at: `${today}T08:30:00Z` },
+        { created_at: `${today}T09:00:00Z` },
+        { created_at: `${today}T09:30:00Z` },
+      ],
+    });
+    const buckets = await getKpisOverWindow(3, client as never);
+    const t = buckets.find((b) => b.date === today)!;
+    expect(t.lead_starts).toBe(4);
+    expect(t.bookings).toBe(2);
+    expect(t.conversion_pct).toBe(50.0);
+  });
+
+  it("returns null conversion_pct when no leads that day", async () => {
+    const client = makeClient({
+      deals: [
+        { data: { state: "booked" }, updated_at: `${todayUtc()}T10:00:00Z` },
+      ],
+      leads: [],
+    });
+    const buckets = await getKpisOverWindow(3, client as never);
+    expect(buckets.every((b) => b.conversion_pct === null)).toBe(true);
+  });
+
+  it("rounds to one decimal: 1 booking / 3 leads = 33.3", async () => {
+    const today = todayUtc();
+    const client = makeClient({
+      deals: [
+        { data: { state: "booked" }, updated_at: `${today}T10:00:00Z` },
+      ],
+      leads: [
+        { created_at: `${today}T08:00:00Z` },
+        { created_at: `${today}T09:00:00Z` },
+        { created_at: `${today}T10:00:00Z` },
+      ],
+    });
+    const buckets = await getKpisOverWindow(3, client as never);
+    const t = buckets.find((b) => b.date === today)!;
+    expect(t.conversion_pct).toBe(33.3);
   });
 });

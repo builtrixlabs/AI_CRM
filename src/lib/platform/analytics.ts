@@ -17,6 +17,13 @@ export type AnalyticsBucket = {
   qualified_starts: number;
   sv_completed: number;
   sv_no_show: number;
+  lead_starts: number;
+  /**
+   * Per-day conversion = bookings / lead_starts.
+   * null when lead_starts == 0 (no denominator that day).
+   * V3.x — rendered as a sparkline alongside the existing KPI series.
+   */
+  conversion_pct: number | null;
 };
 
 const FUNNEL_STATES = new Set([
@@ -44,6 +51,8 @@ function emptyBuckets(days: number): AnalyticsBucket[] {
       qualified_starts: 0,
       sv_completed: 0,
       sv_no_show: 0,
+      lead_starts: 0,
+      conversion_pct: null,
     });
   }
   return out;
@@ -84,6 +93,29 @@ export async function getKpisOverWindow(
     }
   }
 
+  // V3.x — leads: lead_starts is the daily denominator for conversion. We
+  // count nodes of kind=lead by their created_at day in the window.
+  const leadsRes = await client
+    .from("nodes")
+    .select("created_at")
+    .eq("kind", "lead")
+    .gte("created_at", since.toISOString())
+    .is("deleted_at", null);
+  if (!leadsRes.error && leadsRes.data) {
+    for (const row of leadsRes.data as Array<{ created_at: string }>) {
+      const day = row.created_at.slice(0, 10);
+      const b = byDate.get(day);
+      if (b) b.lead_starts += 1;
+    }
+  }
+
+  // V3.x — derived: conversion_pct per day = bookings / lead_starts.
+  for (const b of buckets) {
+    b.conversion_pct = b.lead_starts > 0
+      ? Math.round((b.bookings / b.lead_starts) * 1000) / 10  // one decimal pct
+      : null;
+  }
+
   // Site visits: count completed / no-show by scheduled_at day in window.
   const svRes = await client
     .from("nodes")
@@ -109,12 +141,16 @@ export async function getKpisOverWindow(
 }
 
 export function bucketsToCsv(
-  kpi: "bookings" | "qualified_starts" | "sv_completed" | "sv_no_show",
+  kpi: "bookings" | "qualified_starts" | "sv_completed" | "sv_no_show" | "lead_starts" | "conversion_pct",
   buckets: AnalyticsBucket[]
 ): string {
   const header = `date,${kpi}\n`;
   const rows = buckets
-    .map((b) => `${b.date},${b[kpi]}`)
+    .map((b) => {
+      const v = b[kpi];
+      // null conversion_pct is empty cell, not "null" string — Excel-friendly.
+      return `${b.date},${v === null ? "" : v}`;
+    })
     .join("\n");
   return header + rows + "\n";
 }
