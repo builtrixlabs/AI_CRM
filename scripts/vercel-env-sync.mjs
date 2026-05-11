@@ -152,20 +152,52 @@ function addEnv(name, value, branch) {
 
 function parseArgs(argv) {
   let branch = null;
+  let redeploy = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--branch") {
       branch = argv[++i] || null;
+    } else if (a === "--redeploy") {
+      redeploy = true;
     } else if (a && !a.startsWith("--") && !branch) {
       // Backwards-compat: positional arg = branch name.
       branch = a;
     }
   }
-  return { branch };
+  return { branch, redeploy };
+}
+
+function redeployLatestForBranch(branch) {
+  // Find the most recent deployment for the branch via `vercel ls
+  // --meta githubCommitRef=<branch>` and call `vercel redeploy <url>`.
+  const ls = spawnSync(
+    "vercel",
+    ["ls", "ai-crm", "--meta", `githubCommitRef=${branch}`],
+    { cwd: vercelCwd, encoding: "utf8", shell: true },
+  );
+  const match = ls.stdout?.match(/https:\/\/ai-[a-z0-9]+-builtrixlabs-projects\.vercel\.app/);
+  if (!match) {
+    console.log(
+      `REDEPLOY skipped — no existing deployment for branch yet (next push will build with env vars).`,
+    );
+    return;
+  }
+  const url = match[0];
+  const rd = spawnSync("vercel", ["redeploy", url], {
+    cwd: vercelCwd,
+    encoding: "utf8",
+    shell: true,
+  });
+  if (rd.status !== 0) {
+    process.stderr.write(`REDEPLOY failed: ${rd.stderr}\n`);
+    return;
+  }
+  const newUrl = rd.stdout?.match(/Preview: (https:\/\/[^\s]+)/)?.[1];
+  console.log(`REDEPLOY triggered: ${newUrl ?? "(see vercel dashboard)"}`);
 }
 
 function main() {
-  let { branch } = parseArgs(process.argv.slice(2));
+  let { branch, redeploy } = parseArgs(process.argv.slice(2));
   // Default to the current git branch when run with no args. This matches the
   // common workflow of "I just pushed this branch, now sync its env vars".
   if (!branch) branch = currentBranch();
@@ -211,6 +243,11 @@ function main() {
   }
 
   console.log(`\n${pushed} pushed, ${skipped} skipped, ${failed} failed`);
+
+  if (redeploy && pushed > 0 && branch) {
+    redeployLatestForBranch(branch);
+  }
+
   process.exit(failed > 0 ? 1 : 0);
 }
 
