@@ -20,10 +20,10 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 
 | ID  | Directive (PRD §4) | Status | Acceptance gate (from PRD §9 where stated) |
 |---|---|---|---|
-| D-110 | Deal + Contact + Property + Unit canvases | planned | Canvas p95 < 1.5s |
+| D-110 | Deal + Contact + Property + Unit canvases | **partial** (D-410 delta shipped 2026-05-11 — PR #_TBD_, contact canvas + contact/deal list pages; customer-facing property/unit canvases deferred) | Canvas p95 < 1.5s |
 | D-111 | Canvas-of-canvases (manager pannable view) | planned | — |
-| D-112 | Custom fields engine (L1, JSONB) | planned | — |
-| D-113 | Custom views engine (L2, view selector) | planned | — |
+| D-112 | Custom fields engine (L1, JSONB) | **shipped** (D-020 pre-v3 — table + RLS + admin UI + canvas integration; V2 deltas in non-goals) | — |
+| D-113 | Custom views engine (L2, view selector) | **shipped** (D-413 / PR #50 / `feat(D-413)` `4e7f241`; migration `20260511120000_custom_views.sql` applied live 2026-05-11) | — |
 | D-114 | Power BI–level reporting layer | planned | Pivot p95 < 3s; 8 templates live; ≥ 80% of active org admins use the layer (telemetry) |
 | D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | planned | — |
 | D-116 | Custom Outbound Agent T3 | planned | — |
@@ -86,22 +86,24 @@ Per-directive checklist. Without these, the affected directive can only land ada
 
 ## 5. Cumulative schema changes on V4
 
-Empty. Populated as each directive lands its additive migration.
+Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified post-apply.
 
-| Migration file | Directive | Adds |
-|---|---|---|
-| (none yet) | — | — |
+| Migration file | Directive | Applied | Adds |
+|---|---|---|---|
+| [`20260511120000_custom_views.sql`](../supabase/migrations/20260511120000_custom_views.sql) | D-413 | 2026-05-11 ✓ | `custom_views` table + RLS + `profiles.view_defaults jsonb` + `set_view_default` RPC + immutability trigger |
 
 ---
 
 ## 6. Test counts
 
 ```
-v3 baseline (entering v4): 1359 tests
-v4 (this status):           1359 tests (no V4 work yet)
+v3 baseline (entering v4):  1359 tests
+v4 D-413 (PR #50 merged):  +36 tests (compile-filters 25, admin 11)
+v4 D-410 (this PR):         +6 tests (contacts api)
+v4 current:                ~1401 tests
 ```
 
-Per-directive test deltas will be recorded here as each directive's Gate 4 (verification) lands.
+Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.
 
 ---
 
