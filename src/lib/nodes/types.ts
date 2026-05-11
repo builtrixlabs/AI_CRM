@@ -8,6 +8,10 @@ export const NODE_TYPES = [
   "lead",
   "contact",
   "deal",
+  // RE inventory hierarchy (D-420). `property` retained for backward compat
+  // with D-320 catalog rows; new inventory created under `project` + `tower`.
+  "project",
+  "tower",
   "property",
   "unit",
   "site_visit",

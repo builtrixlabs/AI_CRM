@@ -11,6 +11,7 @@ const NAV = [
   { href: "/admin/agents", label: "AI agents" },
   { href: "/admin/directives", label: "Directives" },
   { href: "/admin/catalog", label: "Catalog" },
+  { href: "/admin/inventory", label: "Inventory" },
   { href: "/admin/billing", label: "Billing" },
   { href: "/admin/system-health", label: "System health" },
   { href: "/admin/webhooks", label: "Webhooks" },

@@ -3,6 +3,8 @@ import type { NodeType } from "../types";
 import leadSchema from "./lead";
 import contactSchema from "./contact";
 import dealSchema from "./deal";
+import projectSchema from "./project";
+import towerSchema from "./tower";
 import propertySchema from "./property";
 import unitSchema from "./unit";
 import siteVisitSchema from "./site_visit";
@@ -15,6 +17,8 @@ const SCHEMAS: Record<NodeType, z.ZodTypeAny> = {
   lead: leadSchema,
   contact: contactSchema,
   deal: dealSchema,
+  project: projectSchema,
+  tower: towerSchema,
   property: propertySchema,
   unit: unitSchema,
   site_visit: siteVisitSchema,
@@ -39,6 +43,8 @@ export {
   leadSchema,
   contactSchema,
   dealSchema,
+  projectSchema,
+  towerSchema,
   propertySchema,
   unitSchema,
   siteVisitSchema,
