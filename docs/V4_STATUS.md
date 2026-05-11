@@ -25,7 +25,7 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 | D-112 | Custom fields engine (L1, JSONB) | **shipped** (D-020 pre-v3 — table + RLS + admin UI + canvas integration; V2 deltas in non-goals) | — |
 | D-113 | Custom views engine (L2, view selector) | **shipped** (D-413 / PR #50 / `feat(D-413)` `4e7f241`; migration `20260511120000_custom_views.sql` applied live 2026-05-11) | — |
 | D-114 | Power BI–level reporting layer | planned | Pivot p95 < 3s; 8 templates live; ≥ 80% of active org admins use the layer (telemetry) |
-| D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | planned | — |
+| D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | **mostly shipped** (v3 D-322 + item 39 watcher + D-415 PR #58 / `44f4227` — per-channel dispatch via D-418 adapters wired into approve action; whatsapp deferred to BSP directive) | — |
 | D-116 | Custom Outbound Agent T3 | planned | — |
 | D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
 | D-118 | External Telephony Adapter | **shell shipped** (D-418 / PR #56 / `ae4e3f9` — adapter interface + mock provider + registry; live providers wait on §10.1 + Exotel/Servetel/Knowlarity/MyOperator/Ozonetel creds) | Live with Exotel + 1 other provider |
@@ -92,6 +92,7 @@ Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified p
 |---|---|---|---|
 | [`20260511120000_custom_views.sql`](../supabase/migrations/20260511120000_custom_views.sql) | D-413 | 2026-05-11 ✓ | `custom_views` table + RLS + `profiles.view_defaults jsonb` + `set_view_default` RPC + immutability trigger |
 | [`20260511180000_webform_endpoints_and_quarantine.sql`](../supabase/migrations/20260511180000_webform_endpoints_and_quarantine.sql) | D-417 | 2026-05-11 ✓ | `webform_endpoints` (sha256-hashed tokens, per-org) + `leads_quarantine` + RLS + pgcrypto |
+| [`20260511200000_agent_approval_queue_dispatch.sql`](../supabase/migrations/20260511200000_agent_approval_queue_dispatch.sql) | D-415 | 2026-05-11 ✓ | `agent_approval_queue` adds `sent_at`/`provider`/`provider_message_id`/`send_error` columns + channel CHECK extended to accept `'sms'` |
 
 ---
 
@@ -103,7 +104,8 @@ v4 D-413 (PR #50):         +36 tests (compile-filters 25, admin 11)
 v4 D-410 (PR #52):          +6 tests (contacts api)
 v4 D-417 (PR #54):          +9 tests (webform ingest 7, token hash 2)
 v4 D-418 (PR #56):         +18 tests (comms adapter shells: telephony 5, email 5, sms 3, registry 4, type 1 implicit)
-v4 current:                ~1428 tests
+v4 D-415 (PR #58):          +8 tests (follow-up dispatch: email + sms happy paths, missing recipients, whatsapp deferred, cross-tenant, idempotent, not-yet-approved gate)
+v4 current:                ~1436 tests
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.

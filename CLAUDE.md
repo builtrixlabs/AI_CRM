@@ -223,12 +223,17 @@ attached to its Preview deploys — without those, runtime 500s before any
 function executes. So:
 
 **Every time the agent cuts a new feature branch that needs preview
-verification (gate 6/7), it runs:**
+verification (gate 6/7), it runs (after `git push -u origin <branch>`):**
 
 ```
 cd <repo-root>     # parent project
-node scripts/vercel-env-sync.mjs <branch-name>
+node scripts/vercel-env-sync.mjs --branch <branch-name> --redeploy
 ```
+
+The `--redeploy` flag finds the latest preview deploy on the branch and
+re-triggers it so it picks up the just-pushed env vars. Skip the flag if
+you're about to push more commits anyway (the next push will build with
+env vars set).
 
 The script pushes `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`,
