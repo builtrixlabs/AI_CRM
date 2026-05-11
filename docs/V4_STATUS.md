@@ -20,14 +20,14 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 
 | ID  | Directive (PRD §4) | Status | Acceptance gate (from PRD §9 where stated) |
 |---|---|---|---|
-| D-110 | Deal + Contact + Property + Unit canvases | **partial** (D-410 delta shipped 2026-05-11 — PR #_TBD_, contact canvas + contact/deal list pages; customer-facing property/unit canvases deferred) | Canvas p95 < 1.5s |
+| D-110 | Deal + Contact + Property + Unit canvases | **partial** (D-410 delta shipped 2026-05-11 — PR #52 `d2f1007`, contact canvas + contact/deal list pages; customer-facing property/unit canvases deferred) | Canvas p95 < 1.5s |
 | D-111 | Canvas-of-canvases (manager pannable view) | planned | — |
 | D-112 | Custom fields engine (L1, JSONB) | **shipped** (D-020 pre-v3 — table + RLS + admin UI + canvas integration; V2 deltas in non-goals) | — |
 | D-113 | Custom views engine (L2, view selector) | **shipped** (D-413 / PR #50 / `feat(D-413)` `4e7f241`; migration `20260511120000_custom_views.sql` applied live 2026-05-11) | — |
 | D-114 | Power BI–level reporting layer | planned | Pivot p95 < 3s; 8 templates live; ≥ 80% of active org admins use the layer (telemetry) |
 | D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | planned | — |
 | D-116 | Custom Outbound Agent T3 | planned | — |
-| D-117 | Multi-source lead connectors | planned | ≥ 6 sources running in production for ≥ 30 days |
+| D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
 | D-118 | External Telephony Adapter | planned | Live with Exotel + 1 other provider |
 | D-119 | Email + SMS multi-channel | planned | DLT-compliant SMS; templates in registry |
 | D-120 | RE Inventory module (Project/Tower/Floor/Unit) | planned | ≥ 1 customer with full project inventory loaded |
@@ -91,6 +91,7 @@ Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified p
 | Migration file | Directive | Applied | Adds |
 |---|---|---|---|
 | [`20260511120000_custom_views.sql`](../supabase/migrations/20260511120000_custom_views.sql) | D-413 | 2026-05-11 ✓ | `custom_views` table + RLS + `profiles.view_defaults jsonb` + `set_view_default` RPC + immutability trigger |
+| [`20260511180000_webform_endpoints_and_quarantine.sql`](../supabase/migrations/20260511180000_webform_endpoints_and_quarantine.sql) | D-417 | 2026-05-11 ✓ | `webform_endpoints` (sha256-hashed tokens, per-org) + `leads_quarantine` + RLS + pgcrypto |
 
 ---
 
@@ -98,9 +99,10 @@ Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified p
 
 ```
 v3 baseline (entering v4):  1359 tests
-v4 D-413 (PR #50 merged):  +36 tests (compile-filters 25, admin 11)
-v4 D-410 (this PR):         +6 tests (contacts api)
-v4 current:                ~1401 tests
+v4 D-413 (PR #50):         +36 tests (compile-filters 25, admin 11)
+v4 D-410 (PR #52):          +6 tests (contacts api)
+v4 D-417 (PR #54):          +9 tests (webform ingest 7, token hash 2)
+v4 current:                ~1410 tests
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.
