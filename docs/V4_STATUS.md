@@ -28,8 +28,8 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 | D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | planned | — |
 | D-116 | Custom Outbound Agent T3 | planned | — |
 | D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
-| D-118 | External Telephony Adapter | planned | Live with Exotel + 1 other provider |
-| D-119 | Email + SMS multi-channel | planned | DLT-compliant SMS; templates in registry |
+| D-118 | External Telephony Adapter | **shell shipped** (D-418 / PR #56 / `ae4e3f9` — adapter interface + mock provider + registry; live providers wait on §10.1 + Exotel/Servetel/Knowlarity/MyOperator/Ozonetel creds) | Live with Exotel + 1 other provider |
+| D-119 | Email + SMS multi-channel | **shell shipped** (D-418 / PR #56 — adapter interfaces + mock providers + registries for both; live providers wait on §10.2 (Postmark/Resend) + §10.3 (MSG91/Gupshup) + DLT registration) | DLT-compliant SMS; templates in registry |
 | D-120 | RE Inventory module (Project/Tower/Floor/Unit) | planned | ≥ 1 customer with full project inventory loaded |
 | D-121 | Booking Pipeline (Token → Possession → Handover) | planned | ≥ 1 deal traversed Token → Registration in production |
 | D-122 | Legal Auditor event bus integration | planned | Voice IQ + Legal Auditor + CRM running together at ≥ 1 customer |
@@ -45,12 +45,12 @@ PRD §7 introduces 6 new baselines. These cannot be written by the agent — ope
 
 | # | File | Owner directive | Subject |
 |---|---|---|---|
-| 116 | `baseline/116-comms-providers-contract.md` | D-118 + D-119 | Telephony adapter interface, Email/SMS provider abstraction |
+| 116 | `baseline/116-comms-providers-contract.md` | D-118 + D-119 | **provisional shipped** at [`docs/baselines/116-comms-providers-contract.md`](baselines/116-comms-providers-contract.md) via D-418 (PR #56). Promote to `baseline/116-*` post-V4-GA. |
 | 117 | `baseline/117-inventory-data-model.md` | D-120 | Project/Tower/Floor/Unit schema + availability state machine |
 | 118 | `baseline/118-booking-pipeline-contract.md` | D-121 | Stage definitions, transition rules, demand letter format |
 | 119 | `baseline/119-reporting-engine-contract.md` | D-114 | Pivot query semantics, dashboard JSON schema |
 | 120 | `baseline/120-nl-compiler-contract.md` | D-123 | NL → SQL plan grammar, confidence calibration, RBAC gate |
-| 121 | `baseline/121-source-connectors-contract.md` | D-117 | Per-source ingestion schema, retry/quarantine policy |
+| 121 | `baseline/121-source-connectors-contract.md` | D-117 | **provisional shipped** at [`docs/baselines/121-source-connectors-contract.md`](baselines/121-source-connectors-contract.md) via D-418 (PR #56). Promote to `baseline/121-*` post-V4-GA. |
 
 ---
 
@@ -102,7 +102,8 @@ v3 baseline (entering v4):  1359 tests
 v4 D-413 (PR #50):         +36 tests (compile-filters 25, admin 11)
 v4 D-410 (PR #52):          +6 tests (contacts api)
 v4 D-417 (PR #54):          +9 tests (webform ingest 7, token hash 2)
-v4 current:                ~1410 tests
+v4 D-418 (PR #56):         +18 tests (comms adapter shells: telephony 5, email 5, sms 3, registry 4, type 1 implicit)
+v4 current:                ~1428 tests
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.
