@@ -165,10 +165,40 @@ Agents do not invoke other agents. Tools allowlist excludes `Task`.
 
 ---
 
+## STOPPING CRITERIA — V4 horizon (operator-set 2026-05-11)
+
+**This section supersedes "auto-retry once, then halt + report" for V4 work. Re-read on every V4 directive build.**
+
+A V4 directive is **NOT complete** — and you **do not stop** — until **every** line below is green. If a line is red, fix it and retry (up to 3 attempts per failure). After 3 attempts on the same gate, halt with a specific status report and the failing gate name.
+
+| # | Gate | Pass = |
+|---|---|---|
+| 1 | **Built** | Every AC in the directive has corresponding code. |
+| 2 | **Tested** | Unit + RTL tests written and passing for new code. Targeted suite green via `npx vitest run tests/<paths>`. |
+| 3 | **Typechecked** | `npx tsc --noEmit` clean for changed files (pre-existing unrelated errors noted but don't block). |
+| 4 | **Migrations applied to Supabase** | Every new `supabase/migrations/*.sql` from this directive applied via `mcp__vibe-supabase__apply_migration_to_branch` and verified (table/RPC exists, RLS enabled). |
+| 5 | **Pushed to git** | Feature branch pushed to `origin`; PR opened against `v4`. |
+| 6 | **Vercel build green** | Preview deploy reaches `READY` state via `mcp__vibe-vercel__wait_for_preview`. On `ERROR`, read deploy logs, fix the build, redeploy. |
+| 7 | **UI/UX verified on the live preview** | Navigate to the preview URL via `mcp__Claude_in_Chrome__*` or `mcp__Claude_Preview__*`; screenshot every new page; confirm rendering + interaction flow. |
+| 8 | **PR merged to `v4`** | Only after gates 1–7. Default: `gh pr merge --squash --delete-branch`. |
+| 9 | **Post-merge v4 build green** | `mcp__vibe-vercel__wait_for_preview --branch v4` reaches `READY`. |
+| 10 | **Status logged** | `docs/V4_STATUS.md` directive table updated from `planned` → `shipped`, with migration list + PR # + Vercel preview URL + `v4.0` test count delta. |
+
+**Rules of motion:**
+- **Don't ask the operator for permission mid-directive** unless a gate genuinely requires their action (e.g. an external API key, a hook-blocked baseline write). Pause AT THAT GATE with a precise ask, not preemptively.
+- **Don't stop "to confirm"** between gates — sequence them. The operator's "continue" / "go" / "do the next thing" already covers the full 10-gate run.
+- **Don't declare success mid-stream.** A PR opened or a passing test suite is progress, not completion. Completion = gate 10 green.
+- **Self-pace longer waits.** Vercel + Supabase polls take minutes; use `wait_for_preview` / `wait_for_branch_ready` with their built-in timeouts, not custom sleeps.
+
+**Definition of "halt with status report":** one message listing (a) what shipped, (b) which gate failed and why, (c) the precise unblocker needed from the operator. Then wait for input.
+
+---
+
 ## VERSION
 
 | Version | Date | Changes |
 |---|---|---|
 | 5.0 | 2026-05-06 | Native + Minimal. Bash-first. Plan Mode at Gate 2. Auto-revert watchdog. ~60% surface cut from V4. |
+| 5.1-v4 | 2026-05-11 | V4 horizon: 10-gate STOPPING CRITERIA replaces "halt on second failure". Don't stop until preview is live, migrated, UI-verified, and merged. Operator-set; non-negotiable for V4 directives. |
 
-**Current: 5.0.0-alpha.0**
+**Current: 5.1.0-v4**
