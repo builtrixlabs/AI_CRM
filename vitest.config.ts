@@ -24,6 +24,7 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: [
         "src/lib/auth/**",
+        "src/lib/booking/**",
         "src/lib/canvas/**",
         "src/components/canvas/**",
         "src/lib/leads/**",
