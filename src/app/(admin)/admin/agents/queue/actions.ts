@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { dispatchApprovedDraft } from "@/lib/agents/follow-up/dispatch";
 
 export type QueueActionResult =
-  | { ok: true }
+  | { ok: true; dispatch?: "sent" | "deferred" }
   | {
       ok: false;
       error: "permission" | "not_found" | "validation" | "internal";
@@ -98,8 +99,38 @@ export async function approveQueueItemAction(
     },
   });
 
+  // D-415 — auto-dispatch via per-channel adapter (mock provider in V1).
+  // On success: row transitions approved → sent. On error: status stays
+  // approved, send_error recorded so operator can retry.
+  const dispatchResult = await dispatchApprovedDraft(
+    {
+      queue_id,
+      organization_id: user.org_id,
+      actor_id: user.user.id,
+    },
+    admin,
+  );
+
   revalidatePath("/admin/agents/queue");
-  return { ok: true };
+
+  if (dispatchResult.ok) {
+    if ("already_sent" in dispatchResult) {
+      return { ok: true, dispatch: "sent" };
+    }
+    return { ok: true, dispatch: "sent" };
+  }
+  if (dispatchResult.reason === "not_configured") {
+    // WhatsApp falls through here today — approval succeeded, send is deferred
+    // to the operator's manual channel surfaces until BSP wiring lands.
+    return { ok: true, dispatch: "deferred" };
+  }
+  // Approval succeeded in DB but dispatch failed. Surface so the UI can
+  // show the error; the row is still 'approved' and operator can retry.
+  return {
+    ok: false,
+    error: "internal",
+    message: dispatchResult.message ?? dispatchResult.reason,
+  };
 }
 
 export async function rejectQueueItemAction(

@@ -1,0 +1,306 @@
+// D-415 — auto-dispatch an approved follow-up draft via the per-channel
+// adapter (D-418 shells). Idempotent. On success: status approved → sent,
+// activity node + audit row written. On error: send_error recorded, status
+// stays approved so operator can retry by re-approving.
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CommsError } from "@/lib/comms/types";
+import * as email from "@/lib/comms/email";
+import * as sms from "@/lib/comms/sms";
+import {
+  FOLLOW_UP_DLT_TEMPLATES,
+  registerFollowUpDltTemplates,
+} from "./dlt";
+
+export const FOLLOW_UP_SERVICE_ACCOUNT =
+  "00000000-0000-4000-8000-000000000002";
+
+export type DispatchArgs = {
+  queue_id: string;
+  organization_id: string;
+  actor_id: string;
+};
+
+export type DispatchResult =
+  | {
+      ok: true;
+      status: "sent";
+      provider: string;
+      provider_message_id: string;
+      activity_id: string;
+    }
+  | { ok: true; already_sent: true }
+  | {
+      ok: false;
+      reason:
+        | "not_found"
+        | "not_approved"
+        | "missing_recipient"
+        | "not_configured"
+        | "provider_error";
+      message?: string;
+    };
+
+/**
+ * Resolve the V1 provider id per channel. V1 hardcodes 'mock' — when an
+ * org configures a live provider (future directive), this function reads
+ * from agent_org_configs / integration_secrets.
+ */
+function pickProvider(channel: "email" | "sms" | "whatsapp"): string {
+  return "mock";
+}
+
+export async function dispatchApprovedDraft(
+  args: DispatchArgs,
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<DispatchResult> {
+  // 1. Fetch queue row (cross-tenant guard via .eq org).
+  const { data: rowData, error: rowErr } = await client
+    .from("agent_approval_queue")
+    .select(
+      "id, organization_id, workspace_id, lead_id, agent_kind, channel, draft_body, edited_body, status, sent_at",
+    )
+    .eq("id", args.queue_id)
+    .eq("organization_id", args.organization_id)
+    .maybeSingle();
+  if (rowErr || !rowData) return { ok: false, reason: "not_found" };
+
+  const row = rowData as {
+    id: string;
+    organization_id: string;
+    workspace_id: string | null;
+    lead_id: string;
+    agent_kind: string;
+    channel: "whatsapp" | "email" | "sms";
+    draft_body: string;
+    edited_body: string | null;
+    status: "pending" | "approved" | "rejected" | "sent";
+    sent_at: string | null;
+  };
+
+  if (row.status === "sent") return { ok: true, already_sent: true };
+  if (row.status !== "approved") {
+    return { ok: false, reason: "not_approved" };
+  }
+
+  // 2. WhatsApp is deferred until BSP wired.
+  if (row.channel === "whatsapp") {
+    await client.from("audit_log").insert({
+      actor_id: args.actor_id,
+      actor_type: "user",
+      actor_role: "org_admin",
+      organization_id: args.organization_id,
+      table_name: "agent_approval_queue",
+      record_id: row.id,
+      action: "agent_draft_send_deferred",
+      diff: { channel: "whatsapp", reason: "not_configured" },
+    });
+    return { ok: false, reason: "not_configured", message: "whatsapp" };
+  }
+
+  // 3. Load the lead's recipient (phone / email) from nodes.data.
+  const { data: leadData } = await client
+    .from("nodes")
+    .select("data, label, workspace_id, organization_id")
+    .eq("id", row.lead_id)
+    .eq("organization_id", args.organization_id)
+    .eq("node_type", "lead")
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!leadData) return { ok: false, reason: "missing_recipient" };
+  const lead = leadData as {
+    data: Record<string, unknown>;
+    label: string;
+    workspace_id: string;
+    organization_id: string;
+  };
+
+  const body = (row.edited_body ?? row.draft_body).trim();
+
+  // 4. Channel dispatch.
+  const provider = pickProvider(row.channel);
+  let providerMessageId: string;
+  try {
+    if (row.channel === "email") {
+      const to =
+        (lead.data?.email as string | undefined) ??
+        (lead.data?.contact_email as string | undefined);
+      if (!to)
+        return {
+          ok: false,
+          reason: "missing_recipient",
+          message: "no email on lead",
+        };
+      const adapter = email.getProvider(
+        provider as never,
+      );
+      const r = await adapter.send({
+        kind: "custom",
+        organization_id: row.organization_id,
+        to,
+        subject: subjectForAgentKind(row.agent_kind),
+        body_text: body,
+      });
+      providerMessageId = r.provider_message_id;
+    } else if (row.channel === "sms") {
+      const to =
+        (lead.data?.phone as string | undefined) ??
+        (lead.data?.contact_phone as string | undefined);
+      if (!to)
+        return {
+          ok: false,
+          reason: "missing_recipient",
+          message: "no phone on lead",
+        };
+      const adapter = sms.getProvider(provider as never);
+      // V1 SMS-mock: register the default DLT template (idempotent at the set
+      // level inside MockSmsProvider).
+      const maybeRegisterable = adapter as unknown as {
+        registerTemplate?: (id: string) => void;
+      };
+      if (typeof maybeRegisterable.registerTemplate === "function") {
+        registerFollowUpDltTemplates({
+          registerTemplate: maybeRegisterable.registerTemplate.bind(adapter),
+        });
+      }
+      const r = await adapter.send({
+        kind: "templated",
+        organization_id: row.organization_id,
+        template_id: FOLLOW_UP_DLT_TEMPLATES[0]!.id,
+        to_phone_e164: to,
+        data: { name: deriveFirstName(lead.label), body },
+      });
+      providerMessageId = r.provider_message_id;
+    } else {
+      // exhaustive check; whatsapp already returned above
+      return { ok: false, reason: "not_configured" };
+    }
+  } catch (err) {
+    const message =
+      err instanceof CommsError
+        ? `${err.kind}: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : "Unknown send error";
+    await client
+      .from("agent_approval_queue")
+      .update({
+        send_error: message.slice(0, 500),
+      })
+      .eq("id", row.id)
+      .eq("organization_id", row.organization_id);
+    await client.from("audit_log").insert({
+      actor_id: args.actor_id,
+      actor_type: "user",
+      actor_role: "org_admin",
+      organization_id: row.organization_id,
+      table_name: "agent_approval_queue",
+      record_id: row.id,
+      action: "agent_draft_send_failed",
+      diff: { channel: row.channel, provider, reason: message },
+    });
+    return { ok: false, reason: "provider_error", message };
+  }
+
+  // 5. Activity node + edge.
+  const actIns = await client
+    .from("nodes")
+    .insert({
+      organization_id: row.organization_id,
+      workspace_id: lead.workspace_id,
+      node_type: "activity",
+      label: `Follow-up sent · ${row.channel}`,
+      state: null,
+      data: {
+        kind: "comms_sent",
+        channel: row.channel,
+        provider,
+        queue_id: row.id,
+        provider_message_id: providerMessageId,
+        agent_kind: row.agent_kind,
+      },
+      created_by: FOLLOW_UP_SERVICE_ACCOUNT,
+      created_via: "system",
+      updated_by: FOLLOW_UP_SERVICE_ACCOUNT,
+      updated_via: "system",
+    })
+    .select("id")
+    .single();
+  const actErr = (actIns as { error: { message: string } | null }).error;
+  if (actErr) {
+    // Activity write failed — still report success for the send (message
+    // went out) but surface the error so operator can investigate.
+    return {
+      ok: false,
+      reason: "provider_error",
+      message: `send succeeded but activity write failed: ${actErr.message}`,
+    };
+  }
+  const activity_id = (actIns as { data: { id: string } }).data.id;
+
+  await client.from("edges").insert({
+    organization_id: row.organization_id,
+    workspace_id: lead.workspace_id,
+    from_node_id: activity_id,
+    to_node_id: row.lead_id,
+    edge_type: "describes",
+    created_by: FOLLOW_UP_SERVICE_ACCOUNT,
+    created_via: "system",
+    updated_by: FOLLOW_UP_SERVICE_ACCOUNT,
+    updated_via: "system",
+  });
+
+  // 6. Mark sent on the queue row.
+  await client
+    .from("agent_approval_queue")
+    .update({
+      status: "sent",
+      sent_at: new Date().toISOString(),
+      provider,
+      provider_message_id: providerMessageId,
+      send_error: null,
+    })
+    .eq("id", row.id)
+    .eq("organization_id", row.organization_id);
+
+  // 7. Audit.
+  await client.from("audit_log").insert({
+    actor_id: args.actor_id,
+    actor_type: "user",
+    actor_role: "org_admin",
+    organization_id: row.organization_id,
+    table_name: "agent_approval_queue",
+    record_id: row.id,
+    action: "agent_draft_sent",
+    diff: {
+      channel: row.channel,
+      provider,
+      activity_id,
+      provider_message_id: providerMessageId,
+    },
+  });
+
+  return {
+    ok: true,
+    status: "sent",
+    provider,
+    provider_message_id: providerMessageId,
+    activity_id,
+  };
+}
+
+function subjectForAgentKind(agent_kind: string): string {
+  switch (agent_kind) {
+    case "follow_up_stale_lead":
+      return "Just checking in";
+    default:
+      return "Follow-up";
+  }
+}
+
+function deriveFirstName(label: string): string {
+  const trimmed = label.trim();
+  const sp = trimmed.indexOf(" ");
+  return sp > 0 ? trimmed.slice(0, sp) : trimmed || "there";
+}
