@@ -31,7 +31,7 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 | D-118 | External Telephony Adapter | **shell shipped** (D-418 / PR #56 / `ae4e3f9` — adapter interface + mock provider + registry; live providers wait on §10.1 + Exotel/Servetel/Knowlarity/MyOperator/Ozonetel creds) | Live with Exotel + 1 other provider |
 | D-119 | Email + SMS multi-channel | **shell shipped** (D-418 / PR #56 — adapter interfaces + mock providers + registries for both; live providers wait on §10.2 (Postmark/Resend) + §10.3 (MSG91/Gupshup) + DLT registration) | DLT-compliant SMS; templates in registry |
 | D-120 | RE Inventory module (Project/Tower/Floor/Unit) | **mostly shipped** (D-420 / PR #59 / `a395c6f` — full PRD §3 P4 hierarchy: `project` + `tower` node types, unit metadata superset (carpet/builtup/saleable, facing, view, PLC, parking, RERA-unit-id), 7-state availability machine (`available → held → blocked → booked → sold → registered → possessed`) via `transition_unit_state` RPC with row lock + audit, hourly `expire_inventory_holds` cron, 6 new perms, admin UI at `/admin/inventory`; migrations `20260511190000_re_inventory.sql` + `20260511191000_re_inventory_revoke_authenticated.sql` applied live 2026-05-11; customer-facing project/unit canvases deferred to D-421) | ≥ 1 customer with full project inventory loaded |
-| D-121 | Booking Pipeline (Token → Possession → Handover) | planned | ≥ 1 deal traversed Token → Registration in production |
+| D-121 | Booking Pipeline (Token → Possession → Handover) | **partial** (D-421 shipped 2026-05-11 — PR #60 `87601c6`, slice 1 of 4: 8-stage state machine on deal canvas + `transition_stage` SECURITY DEFINER RPC + audit table + RTL widget; D-422 milestones / D-423 demand-letter PDF / D-424 PSCRM+Legal Auditor event emissions deferred to follow-up directives per baseline 118 §10) | ≥ 1 deal traversed Token → Registration in production |
 | D-122 | Legal Auditor event bus integration | planned | Voice IQ + Legal Auditor + CRM running together at ≥ 1 customer |
 | D-123 | NL Cmd+K free-form (read-only) | planned | ≥ 80% acceptance on 200-query internal eval set; p95 < 2s |
 | D-124 | Bulk CSV import + field mapping | planned | 10K+ row file imported successfully; quarantine surfacing works |
@@ -47,7 +47,7 @@ PRD §7 introduces 6 new baselines. These cannot be written by the agent — ope
 |---|---|---|---|
 | 116 | `baseline/116-comms-providers-contract.md` | D-118 + D-119 | **provisional shipped** at [`docs/baselines/116-comms-providers-contract.md`](baselines/116-comms-providers-contract.md) via D-418 (PR #56). Promote to `baseline/116-*` post-V4-GA. |
 | 117 | `baseline/117-inventory-data-model.md` | D-120 | Project/Tower/Floor/Unit schema + availability state machine. **Runtime shipped via D-420 (PR #59).** Baseline doc still pending operator authoring (hooks block `baseline/**`); the live schema + state graph + TTLs documented in `directives/420-re-inventory.md` are the authoritative reference until promoted. |
-| 118 | `baseline/118-booking-pipeline-contract.md` | D-121 | Stage definitions, transition rules, demand letter format |
+| 118 | `baseline/118-booking-pipeline-contract.md` | D-121 | **shipped** at [`baseline/118-booking-pipeline-contract.md`](../baseline/118-booking-pipeline-contract.md) via D-421 (PR #60) — stage definitions (8), transition matrix incl. named skips + role-gated rollback, audit shape, milestone ledger contract, demand-letter §10.6 lock, outbox event contract, RLS posture, directive slicing into D-421→D-424 |
 | 119 | `baseline/119-reporting-engine-contract.md` | D-114 | Pivot query semantics, dashboard JSON schema |
 | 120 | `baseline/120-nl-compiler-contract.md` | D-123 | NL → SQL plan grammar, confidence calibration, RBAC gate |
 | 121 | `baseline/121-source-connectors-contract.md` | D-117 | **provisional shipped** at [`docs/baselines/121-source-connectors-contract.md`](baselines/121-source-connectors-contract.md) via D-418 (PR #56). Promote to `baseline/121-*` post-V4-GA. |
@@ -65,7 +65,7 @@ These shape directives, not just env vars. Resolve before locking the affected d
 | 10.3 | WhatsApp BSP (AiSensy vs Gupshup vs Cloud API) | D-115 / D-116 | TBD on volume pricing |
 | 10.4 | Dashboard renderer (Recharts vs lightweight embed) | D-114 | TBD; avoid Tableau / Power BI Embedded |
 | 10.5 | NL compiler model (Haiku vs Sonnet) | D-123 | TBD; ship eval set with D-123 |
-| 10.6 | Demand letter generation (Puppeteer vs templating) | D-121 | TBD; locks in baseline 118 |
+| 10.6 | Demand letter generation (Puppeteer vs templating) | D-121 | **decided** — in-process templating via `@react-pdf/renderer` (no SaaS, no vendor key). Locked in [baseline 118 §7](../baseline/118-booking-pipeline-contract.md). DocSeal/Carbone deferred to V1.5+ if a customer asks for countersigning. Actual PDF rendering lands with D-423. |
 
 ---
 
@@ -95,6 +95,7 @@ Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified p
 | [`20260511200000_agent_approval_queue_dispatch.sql`](../supabase/migrations/20260511200000_agent_approval_queue_dispatch.sql) | D-415 | 2026-05-11 ✓ | `agent_approval_queue` adds `sent_at`/`provider`/`provider_message_id`/`send_error` columns + channel CHECK extended to accept `'sms'` |
 | [`20260511190000_re_inventory.sql`](../supabase/migrations/20260511190000_re_inventory.sql) | D-420 | 2026-05-11 ✓ | `nodes.node_type` CHECK adds `'project'` + `'tower'`; `custom_views.entity_type` CHECK mirrored; `nodes.state_expires_at timestamptz` + partial index; `transition_unit_state` RPC (row lock + transition graph + audit); `expire_inventory_holds` RPC (cron) |
 | [`20260511191000_re_inventory_revoke_authenticated.sql`](../supabase/migrations/20260511191000_re_inventory_revoke_authenticated.sql) | D-420 | 2026-05-11 ✓ | Follow-up — explicitly revokes EXECUTE on `expire_inventory_holds` from `authenticated`/`anon` (service_role only) |
+| [`20260511220000_booking_pipeline_stage_machine.sql`](../supabase/migrations/20260511220000_booking_pipeline_stage_machine.sql) | D-421 | 2026-05-11 ✓ | `deal_stage` enum (8 values, frozen) + `nodes.current_stage` column (NULLABLE; deal-typed rows only, backfilled to `'eoi'`) + `stage_transitions` audit table with `UNIQUE (deal_id, idempotency_key)` + RLS (SELECT for org members; INSERT/UPDATE/DELETE denied — RPC-only) + `transition_stage` SECURITY DEFINER RPC enforcing baseline 118 §4 matrix (forward-by-one, 2 named skips, role-gated single-step rollback, idempotency, provenance, row lock) |
 
 ---
 
@@ -108,7 +109,8 @@ v4 D-417 (PR #54):          +9 tests (webform ingest 7, token hash 2)
 v4 D-418 (PR #56):         +18 tests (comms adapter shells: telephony 5, email 5, sms 3, registry 4, type 1 implicit)
 v4 D-415 (PR #58):          +8 tests (follow-up dispatch: email + sms happy paths, missing recipients, whatsapp deferred, cross-tenant, idempotent, not-yet-approved gate)
 v4 D-420 (PR #59):         +64 tests (state-machine 16, state-api wrappers 18, projects-api 7, towers+units 9, action-menu perm filter 8 plus shared fixtures)
-v4 current:                ~1500 tests
+v4 D-421 (PR #60):         +39 unit + 9 integration (stages matrix 21, booking api 4, DealStageTracker RTL 14, transition_stage RPC integration 9 against live Supabase)
+v4 current:                ~1539 unit tests + 9 integration delta
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.
