@@ -194,11 +194,73 @@ A V4 directive is **NOT complete** — and you **do not stop** — until **every
 
 ---
 
+## INFRASTRUCTURE THE AGENT OWNS (operator-delegated 2026-05-11)
+
+The operator is **not** the migration runner and **not** the env-var pusher. Those are agent jobs. Two scripts encode this:
+
+### Supabase migrations (gate 4)
+
+For every directive that ships a new `supabase/migrations/*.sql`:
+
+```
+cd <repo-root>     # parent project (where .env lives, not the worktree)
+node scripts/apply_migration.mjs supabase/migrations/<new-file>.sql
+```
+
+The script (a) creates the `applied_migrations` ledger on first run, (b) skips
+re-application by name (idempotent), (c) wraps the SQL in BEGIN/COMMIT,
+(d) bails with the postgres error message on failure. Reads `DATABASE_URL` from
+the project `.env`.
+
+After applying, write a one-off `scripts/verify_<directive>.mjs` checker
+(table exists, RPC callable, RLS enabled, indexes present) and run it. Both
+files commit alongside the directive.
+
+### Vercel preview env (gate 6 prerequisite)
+
+Vercel scopes env vars **per git branch**. A brand-new branch has no env vars
+attached to its Preview deploys — without those, runtime 500s before any
+function executes. So:
+
+**Every time the agent cuts a new feature branch that needs preview
+verification (gate 6/7), it runs:**
+
+```
+cd <repo-root>     # parent project
+node scripts/vercel-env-sync.mjs <branch-name>
+```
+
+The script pushes `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `MFA_DEMO_MODE` (when set) to
+`preview(<branch>)`. Idempotent: existing values are removed and re-added so
+the Vercel side always matches the local `.env`.
+
+If a new env var is added to local `.env` (a new feature needs it), append it
+to `RUNTIME_VARS` in `scripts/vercel-env-sync.mjs` and re-run for the active
+branch. Production env vars are operator-owned — this script only touches
+Preview scope.
+
+**Workflow for every directive that adds runtime config:**
+
+1. Update local `.env` / `.env.local` (operator does this once).
+2. Append the var name to `RUNTIME_VARS` in `vercel-env-sync.mjs` (agent).
+3. `node scripts/vercel-env-sync.mjs <branch>` (agent) — push to Preview.
+4. Redeploy or wait for next push to pick up. Vercel runtime env is read at
+   deploy time; existing deploys won't pick up new vars without redeploy.
+
+If a Preview deploy 500s and the same code runs fine locally, **the first
+thing to check is whether `vercel env ls | grep <branch>` shows the expected
+vars.** If not, the script wasn't run for that branch — run it.
+
+---
+
 ## VERSION
 
 | Version | Date | Changes |
 |---|---|---|
 | 5.0 | 2026-05-06 | Native + Minimal. Bash-first. Plan Mode at Gate 2. Auto-revert watchdog. ~60% surface cut from V4. |
 | 5.1-v4 | 2026-05-11 | V4 horizon: 10-gate STOPPING CRITERIA replaces "halt on second failure". Don't stop until preview is live, migrated, UI-verified, and merged. Operator-set; non-negotiable for V4 directives. |
+| 5.2-v4 | 2026-05-11 | Agent owns infrastructure: `scripts/apply_migration.mjs` (Supabase live, idempotent) + `scripts/vercel-env-sync.mjs` (per-branch Preview env, pushes from local .env). Operator no longer asked to run these. |
 
-**Current: 5.1.0-v4**
+**Current: 5.2.0-v4**
