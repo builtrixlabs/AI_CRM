@@ -2,27 +2,25 @@
 /**
  * scripts/vercel-env-sync.mjs
  *
- * Push the project's runtime env vars to a Vercel Preview scope (per-branch).
- * Solves the "preview deploy 500s because env vars aren't set for this branch"
- * problem. The operator owns this as part of the V4 discipline (CLAUDE.md
- * §STOPPING CRITERIA — gate 6 prerequisite); the agent runs this before each
- * new feature branch's preview is expected to render.
+ * Push the project's runtime env vars to Vercel.
+ *
+ * Default mode: writes to the general "Preview" scope (applies to every
+ * preview branch that doesn't have a per-branch override). This avoids the
+ * chicken-and-egg where per-branch scope requires the branch to exist on
+ * origin first.
+ *
+ * Per-branch mode: pass a git branch name as arg 1. The branch must already
+ * exist on the connected Git repo (push it before running). Per-branch
+ * overrides general Preview.
  *
  * Behaviour:
- *   - Reads var values from <repo>/.env (then .env.local as fallback).
- *   - For each var in RUNTIME_VARS, calls `vercel env add NAME preview <branch>`
- *     via stdin-piped value. Idempotent: if the var already exists for that
- *     branch, this script first removes it (vercel env rm) then re-adds.
- *   - On success, prints a one-line summary per var.
+ *   - Reads var values from <repo>/.env (then .env.local).
+ *   - For each var in RUNTIME_VARS, removes the existing entry (if any) and
+ *     re-adds it. Idempotent — re-running reconciles Vercel to local .env.
  *
  * Usage:
- *   node scripts/vercel-env-sync.mjs <git-branch>
- *
- * Examples:
- *   node scripts/vercel-env-sync.mjs v4
- *   node scripts/vercel-env-sync.mjs feature/417-universal-webform
- *
- * If <git-branch> is omitted, the current `git rev-parse --abbrev-ref HEAD` is used.
+ *   node scripts/vercel-env-sync.mjs              # general Preview scope
+ *   node scripts/vercel-env-sync.mjs --branch v4  # per-branch
  *
  * Does NOT push:
  *   - DATABASE_URL — preview env uses the same Supabase project via REST anyway.
@@ -118,48 +116,74 @@ function listVercelEnv() {
 }
 
 function rmEnv(name, branch) {
-  // `vercel env rm NAME preview <branch> -y` (the -y avoids the confirmation prompt).
-  const r = spawnSync(
-    "vercel",
-    ["env", "rm", name, "preview", branch, "-y"],
-    { cwd: vercelCwd, encoding: "utf8", shell: true },
-  );
-  if (r.status !== 0 && !/does not exist/i.test(r.stderr)) {
+  const args = ["env", "rm", name, "preview"];
+  if (branch) args.push(branch);
+  args.push("-y");
+  const r = spawnSync("vercel", args, {
+    cwd: vercelCwd,
+    encoding: "utf8",
+    shell: true,
+  });
+  if (r.status !== 0 && !/does not exist|not found/i.test(r.stderr || "")) {
     process.stderr.write(`[vercel-env-sync] rm ${name} failed: ${r.stderr}\n`);
   }
 }
 
 function addEnv(name, value, branch) {
-  // Pipe value via stdin to bypass interactive prompt.
-  const r = spawnSync(
-    "vercel",
-    ["env", "add", name, "preview", branch],
-    {
-      cwd: vercelCwd,
-      input: value + "\n",
-      encoding: "utf8",
-      shell: true,
-    },
-  );
+  const args = ["env", "add", name, "preview"];
+  if (branch) args.push(branch);
+  const r = spawnSync("vercel", args, {
+    cwd: vercelCwd,
+    input: value + "\n",
+    encoding: "utf8",
+    shell: true,
+  });
+  const scope = branch ? `preview(${branch})` : "preview(all branches)";
   if (r.status !== 0) {
     process.stderr.write(
-      `[vercel-env-sync] add ${name} -> preview(${branch}) failed: ${r.stderr}\n`,
+      `[vercel-env-sync] add ${name} -> ${scope} failed: ${r.stderr}\n`,
     );
     return false;
   }
+  // Vercel returns 0 + stdout "Saving" when it actually saved. Some
+  // shells return 0 even on the silent stdout-only path. Trust status==0.
   return true;
 }
 
+function parseArgs(argv) {
+  let branch = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--branch") {
+      branch = argv[++i] || null;
+    } else if (a && !a.startsWith("--") && !branch) {
+      // Backwards-compat: positional arg = branch name.
+      branch = a;
+    }
+  }
+  return { branch };
+}
+
 function main() {
-  const branch = process.argv[2] || currentBranch();
+  let { branch } = parseArgs(process.argv.slice(2));
+  // Default to the current git branch when run with no args. This matches the
+  // common workflow of "I just pushed this branch, now sync its env vars".
+  if (!branch) branch = currentBranch();
   if (!branch) {
-    console.error("usage: node scripts/vercel-env-sync.mjs <git-branch>");
+    console.error(
+      "could not determine branch. Pass --branch <name> or run inside a git repo.",
+    );
     process.exit(1);
   }
+
   const env = loadEnv();
   const have = listVercelEnv();
 
-  console.log(`Target: preview(${branch})`);
+  const scope = `preview(${branch})`;
+  console.log(`Target: ${scope}`);
+  console.log(
+    `  Note: branch must exist on origin (push the branch first).`,
+  );
   let pushed = 0;
   let skipped = 0;
   let failed = 0;
@@ -171,14 +195,15 @@ function main() {
       skipped++;
       continue;
     }
-    const haveKey = `${name}|Preview (${branch})`;
+    const haveKey = branch
+      ? `${name}|Preview (${branch})`
+      : `${name}|Preview`;
     if (have.has(haveKey)) {
-      // rm-then-add to make values match local
       rmEnv(name, branch);
     }
     const ok = addEnv(name, v, branch);
     if (ok) {
-      console.log(`PUSH   ${name} → preview(${branch})`);
+      console.log(`PUSH   ${name} → ${scope}`);
       pushed++;
     } else {
       failed++;
