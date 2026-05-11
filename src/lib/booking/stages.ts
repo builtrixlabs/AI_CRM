@@ -123,3 +123,11 @@ export function backwardCorrectionTarget(
 export function isTerminal(s: BookingStage): boolean {
   return s === "handover_complete";
 }
+
+// D-421 baseline 118 AC-8 spec names — kept as aliases of the existing
+// BOOKING_STAGES / BookingStage exports above so the spec contract is honored
+// alongside the runtime names actually consumed by the codebase. Either name
+// resolves to the same value; do not introduce a parallel enum.
+export const DEAL_STAGES = BOOKING_STAGES;
+export type DealStage = BookingStage;
+export const DEAL_STAGE_LABEL = BOOKING_STAGE_LABEL;

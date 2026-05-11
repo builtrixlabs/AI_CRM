@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { inngest } from "@/lib/inngest/client";
 import {
   WebformSourceError,
   webformIngestPayloadSchema,
@@ -157,6 +158,27 @@ export async function ingestLead(
     diff: { source: "webform", endpoint_id: verified.endpoint_id },
   });
   await bumpEndpointReceivedCount(client, verified.endpoint_id);
+
+  // D-417 AC-6 — wake the Lead Enrichment Agent (D-009). Mirrors the
+  // `lead.created` emit in src/lib/leads/api.ts:createLead. Best-effort:
+  // failure to enqueue must NOT roll back the lead — the node is
+  // persistent and enrichment is async + retry-able.
+  try {
+    await inngest.send({
+      name: "lead.created",
+      data: {
+        lead_id,
+        organization_id: verified.organization_id,
+        workspace_id,
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[webform.ingestLead] inngest.send(lead.created) failed",
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   return { ok: true, lead_id, endpoint_id: verified.endpoint_id };
 }
