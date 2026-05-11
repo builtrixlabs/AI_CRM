@@ -30,7 +30,7 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 | D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
 | D-118 | External Telephony Adapter | **shell shipped** (D-418 / PR #56 / `ae4e3f9` — adapter interface + mock provider + registry; live providers wait on §10.1 + Exotel/Servetel/Knowlarity/MyOperator/Ozonetel creds) | Live with Exotel + 1 other provider |
 | D-119 | Email + SMS multi-channel | **shell shipped** (D-418 / PR #56 — adapter interfaces + mock providers + registries for both; live providers wait on §10.2 (Postmark/Resend) + §10.3 (MSG91/Gupshup) + DLT registration) | DLT-compliant SMS; templates in registry |
-| D-120 | RE Inventory module (Project/Tower/Floor/Unit) | planned | ≥ 1 customer with full project inventory loaded |
+| D-120 | RE Inventory module (Project/Tower/Floor/Unit) | **mostly shipped** (D-420 / PR #59 / `a395c6f` — full PRD §3 P4 hierarchy: `project` + `tower` node types, unit metadata superset (carpet/builtup/saleable, facing, view, PLC, parking, RERA-unit-id), 7-state availability machine (`available → held → blocked → booked → sold → registered → possessed`) via `transition_unit_state` RPC with row lock + audit, hourly `expire_inventory_holds` cron, 6 new perms, admin UI at `/admin/inventory`; migrations `20260511190000_re_inventory.sql` + `20260511191000_re_inventory_revoke_authenticated.sql` applied live 2026-05-11; customer-facing project/unit canvases deferred to D-421) | ≥ 1 customer with full project inventory loaded |
 | D-121 | Booking Pipeline (Token → Possession → Handover) | planned | ≥ 1 deal traversed Token → Registration in production |
 | D-122 | Legal Auditor event bus integration | planned | Voice IQ + Legal Auditor + CRM running together at ≥ 1 customer |
 | D-123 | NL Cmd+K free-form (read-only) | planned | ≥ 80% acceptance on 200-query internal eval set; p95 < 2s |
@@ -46,7 +46,7 @@ PRD §7 introduces 6 new baselines. These cannot be written by the agent — ope
 | # | File | Owner directive | Subject |
 |---|---|---|---|
 | 116 | `baseline/116-comms-providers-contract.md` | D-118 + D-119 | **provisional shipped** at [`docs/baselines/116-comms-providers-contract.md`](baselines/116-comms-providers-contract.md) via D-418 (PR #56). Promote to `baseline/116-*` post-V4-GA. |
-| 117 | `baseline/117-inventory-data-model.md` | D-120 | Project/Tower/Floor/Unit schema + availability state machine |
+| 117 | `baseline/117-inventory-data-model.md` | D-120 | Project/Tower/Floor/Unit schema + availability state machine. **Runtime shipped via D-420 (PR #59).** Baseline doc still pending operator authoring (hooks block `baseline/**`); the live schema + state graph + TTLs documented in `directives/420-re-inventory.md` are the authoritative reference until promoted. |
 | 118 | `baseline/118-booking-pipeline-contract.md` | D-121 | Stage definitions, transition rules, demand letter format |
 | 119 | `baseline/119-reporting-engine-contract.md` | D-114 | Pivot query semantics, dashboard JSON schema |
 | 120 | `baseline/120-nl-compiler-contract.md` | D-123 | NL → SQL plan grammar, confidence calibration, RBAC gate |
@@ -93,6 +93,8 @@ Each row applied to live Supabase via `scripts/apply_migration.mjs` + verified p
 | [`20260511120000_custom_views.sql`](../supabase/migrations/20260511120000_custom_views.sql) | D-413 | 2026-05-11 ✓ | `custom_views` table + RLS + `profiles.view_defaults jsonb` + `set_view_default` RPC + immutability trigger |
 | [`20260511180000_webform_endpoints_and_quarantine.sql`](../supabase/migrations/20260511180000_webform_endpoints_and_quarantine.sql) | D-417 | 2026-05-11 ✓ | `webform_endpoints` (sha256-hashed tokens, per-org) + `leads_quarantine` + RLS + pgcrypto |
 | [`20260511200000_agent_approval_queue_dispatch.sql`](../supabase/migrations/20260511200000_agent_approval_queue_dispatch.sql) | D-415 | 2026-05-11 ✓ | `agent_approval_queue` adds `sent_at`/`provider`/`provider_message_id`/`send_error` columns + channel CHECK extended to accept `'sms'` |
+| [`20260511190000_re_inventory.sql`](../supabase/migrations/20260511190000_re_inventory.sql) | D-420 | 2026-05-11 ✓ | `nodes.node_type` CHECK adds `'project'` + `'tower'`; `custom_views.entity_type` CHECK mirrored; `nodes.state_expires_at timestamptz` + partial index; `transition_unit_state` RPC (row lock + transition graph + audit); `expire_inventory_holds` RPC (cron) |
+| [`20260511191000_re_inventory_revoke_authenticated.sql`](../supabase/migrations/20260511191000_re_inventory_revoke_authenticated.sql) | D-420 | 2026-05-11 ✓ | Follow-up — explicitly revokes EXECUTE on `expire_inventory_holds` from `authenticated`/`anon` (service_role only) |
 
 ---
 
@@ -105,7 +107,8 @@ v4 D-410 (PR #52):          +6 tests (contacts api)
 v4 D-417 (PR #54):          +9 tests (webform ingest 7, token hash 2)
 v4 D-418 (PR #56):         +18 tests (comms adapter shells: telephony 5, email 5, sms 3, registry 4, type 1 implicit)
 v4 D-415 (PR #58):          +8 tests (follow-up dispatch: email + sms happy paths, missing recipients, whatsapp deferred, cross-tenant, idempotent, not-yet-approved gate)
-v4 current:                ~1436 tests
+v4 D-420 (PR #59):         +64 tests (state-machine 16, state-api wrappers 18, projects-api 7, towers+units 9, action-menu perm filter 8 plus shared fixtures)
+v4 current:                ~1500 tests
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.
