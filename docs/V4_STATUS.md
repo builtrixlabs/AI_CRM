@@ -20,14 +20,14 @@ All planned, none built. Acceptance criteria distilled from PRD §4 (V1 acceptan
 
 | ID  | Directive (PRD §4) | Status | Acceptance gate (from PRD §9 where stated) |
 |---|---|---|---|
-| D-110 | Deal + Contact + Property + Unit canvases | **partial** (D-410 delta shipped 2026-05-11 — PR #52 `d2f1007`, contact canvas + contact/deal list pages; customer-facing property/unit canvases deferred) | Canvas p95 < 1.5s |
+| D-110 | Deal + Contact + Property + Unit canvases | **partial** (D-410 delta shipped 2026-05-11 — PR #52 `d2f1007`, contact canvas + contact/deal list pages; consolidation pass added `CustomFieldsBlock` on contact canvas; customer-facing property/unit canvases deferred) | Canvas p95 < 1.5s |
 | D-111 | Canvas-of-canvases (manager pannable view) | planned | — |
 | D-112 | Custom fields engine (L1, JSONB) | **shipped** (D-020 pre-v3 — table + RLS + admin UI + canvas integration; V2 deltas in non-goals) | — |
-| D-113 | Custom views engine (L2, view selector) | **shipped** (D-413 / PR #50 / `feat(D-413)` `4e7f241`; migration `20260511120000_custom_views.sql` applied live 2026-05-11) | — |
+| D-113 | Custom views engine (L2, view selector) | **shipped** (D-413 / PR #50 / `feat(D-413)` `4e7f241`; migration `20260511120000_custom_views.sql` applied live 2026-05-11; consolidation pass added `src/lib/views/compile-columns.ts` module + "Save current as view" affordance + `POST /api/views` programmatic dispatcher) | — |
 | D-114 | Power BI–level reporting layer | planned | Pivot p95 < 3s; 8 templates live; ≥ 80% of active org admins use the layer (telemetry) |
 | D-115 | Follow-up Agent T2 + approval queue + Stale-Lead Watcher | **mostly shipped** (v3 D-322 + item 39 watcher + D-415 PR #58 / `44f4227` — per-channel dispatch via D-418 adapters wired into approve action; whatsapp deferred to BSP directive) | — |
 | D-116 | Custom Outbound Agent T3 | planned | — |
-| D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
+| D-117 | Multi-source lead connectors | **partial** (D-417 shipped 2026-05-11 — PR #54 `c845044`, universal webform endpoint + lead quarantine; consolidation pass wired the `lead.created` Inngest emit so webform-ingested leads wake the D-009 Lead Enrichment Agent; source-specific adapters Meta/Google/JustDial/Sulekha/MagicBricks/99acres/Housing.com deferred to follow-up directives once API keys land) | ≥ 6 sources running in production for ≥ 30 days |
 | D-118 | External Telephony Adapter | **shell shipped** (D-418 / PR #56 / `ae4e3f9` — adapter interface + mock provider + registry; live providers wait on §10.1 + Exotel/Servetel/Knowlarity/MyOperator/Ozonetel creds) | Live with Exotel + 1 other provider |
 | D-119 | Email + SMS multi-channel | **shell shipped** (D-418 / PR #56 — adapter interfaces + mock providers + registries for both; live providers wait on §10.2 (Postmark/Resend) + §10.3 (MSG91/Gupshup) + DLT registration) | DLT-compliant SMS; templates in registry |
 | D-120 | RE Inventory module (Project/Tower/Floor/Unit) | **mostly shipped** (D-420 / PR #59 / `a395c6f` — full PRD §3 P4 hierarchy: `project` + `tower` node types, unit metadata superset (carpet/builtup/saleable, facing, view, PLC, parking, RERA-unit-id), 7-state availability machine (`available → held → blocked → booked → sold → registered → possessed`) via `transition_unit_state` RPC with row lock + audit, hourly `expire_inventory_holds` cron, 6 new perms, admin UI at `/admin/inventory`; migrations `20260511190000_re_inventory.sql` + `20260511191000_re_inventory_revoke_authenticated.sql` applied live 2026-05-11; customer-facing project/unit canvases deferred to D-421) | ≥ 1 customer with full project inventory loaded |
@@ -110,7 +110,8 @@ v4 D-418 (PR #56):         +18 tests (comms adapter shells: telephony 5, email 5
 v4 D-415 (PR #58):          +8 tests (follow-up dispatch: email + sms happy paths, missing recipients, whatsapp deferred, cross-tenant, idempotent, not-yet-approved gate)
 v4 D-420 (PR #59):         +64 tests (state-machine 16, state-api wrappers 18, projects-api 7, towers+units 9, action-menu perm filter 8 plus shared fixtures)
 v4 D-421 (PR #60):         +39 unit + 9 integration (stages matrix 21, booking api 4, DealStageTracker RTL 14, transition_stage RPC integration 9 against live Supabase)
-v4 current:                ~1539 unit tests + 9 integration delta
+v4 consolidation (PR TBD): +27 tests (compile-columns 7, webform inngest emit 3, views dispatcher route 13, DEAL_STAGES aliases 4) — also unblocked 9 pre-existing V3 test files that had stale node_modules
+v4 current:                ~1594 unit tests + 9 integration delta
 ```
 
 Per-directive test deltas recorded as each directive's Gate 2 (Tested) lands.

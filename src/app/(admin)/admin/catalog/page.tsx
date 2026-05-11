@@ -50,6 +50,31 @@ export default async function CatalogIndexPage(props: {
         </p>
       </header>
 
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="py-3 text-sm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-medium text-blue-900">
+                New: Inventory module (D-420)
+              </p>
+              <p className="text-xs text-blue-800 mt-0.5">
+                Project / tower / unit hierarchy with the 7-state availability
+                machine (available · held · blocked · booked · sold · registered
+                · possessed). Use for any new project; catalog stays for
+                read-only legacy properties.
+              </p>
+            </div>
+            <Link
+              href="/admin/inventory"
+              data-testid="catalog-inventory-link"
+              className="rounded-md bg-blue-900 text-white text-xs font-medium px-3 py-1.5 hover:bg-blue-800"
+            >
+              Open Inventory →
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
       <form className="flex items-end gap-3" action="/admin/catalog">
         <div className="space-y-1">
           <label htmlFor="city" className="text-xs uppercase tracking-wide text-neutral-500">

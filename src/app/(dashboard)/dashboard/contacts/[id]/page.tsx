@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomFieldsBlock } from "@/components/canvas/custom-fields-block";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { resolveForUser } from "@/lib/auth/permissions";
 import { getContactCanvas } from "@/lib/contacts/api";
@@ -59,6 +60,13 @@ export default async function ContactCanvasPage(props: {
             <Row
               label="Updated"
               value={dateFmt.format(new Date(contact.updated_at))}
+            />
+            <CustomFieldsBlock
+              node={{
+                organization_id: contact.organization_id,
+                data: contact.data,
+              }}
+              entityType="contact"
             />
           </CardContent>
         </Card>

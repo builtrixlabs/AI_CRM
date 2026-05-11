@@ -1,4 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+
+const inngestSendMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@/lib/inngest/client", () => ({
+  inngest: { send: inngestSendMock },
+}));
+
 import { ingestLead } from "@/lib/sources/webform/api";
 import { hashToken } from "@/lib/sources/webform/tokens";
 
@@ -223,6 +229,53 @@ describe("ingestLead — happy path", () => {
     );
     expect(bump).toBeTruthy();
     expect((bump?.payload as Record<string, unknown>).received_count).toBe(6);
+  });
+
+  it("emits lead.created Inngest event after successful insert (D-417 AC-6)", async () => {
+    inngestSendMock.mockClear();
+    const m = makeClient({ endpoint: activeEndpoint(), insertId: "lead-xyz" });
+    const r = await ingestLead(
+      { token: VALID_TOKEN, payload_raw: { phone: "+91 99000 11111" } },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    expect(inngestSendMock).toHaveBeenCalledOnce();
+    expect(inngestSendMock.mock.calls[0]![0]).toEqual({
+      name: "lead.created",
+      data: {
+        lead_id: "lead-xyz",
+        organization_id: ORG,
+        workspace_id: WS,
+      },
+    });
+  });
+
+  it("does NOT roll back the lead when inngest.send fails (best-effort)", async () => {
+    inngestSendMock.mockClear();
+    inngestSendMock.mockRejectedValueOnce(new Error("inngest down"));
+    const m = makeClient({ endpoint: activeEndpoint(), insertId: "lead-bf" });
+    const r = await ingestLead(
+      { token: VALID_TOKEN, payload_raw: { phone: "+91 99000 11111" } },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.lead_id).toBe("lead-bf");
+    const nodeInsert = m.inserts.find((i) => i.table === "nodes");
+    expect(nodeInsert).toBeTruthy();
+  });
+
+  it("does NOT emit lead.created when the payload is quarantined", async () => {
+    inngestSendMock.mockClear();
+    const m = makeClient({
+      endpoint: activeEndpoint(),
+      quarantineId: "q-x",
+    });
+    const r = await ingestLead(
+      { token: VALID_TOKEN, payload_raw: { name: "no phone here" } },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    expect(inngestSendMock).not.toHaveBeenCalled();
   });
 
   it("falls back to org's first workspace when endpoint has no workspace_id", async () => {

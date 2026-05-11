@@ -10,6 +10,7 @@ import { resolveForUser } from "@/lib/auth/permissions";
 import type { Permission } from "@/lib/auth/rbac";
 import { listFieldsForType } from "@/lib/customfields/admin";
 import {
+  compileColumns,
   customFieldKey,
   getViewBySlug,
   isCustomFieldRef,
@@ -21,6 +22,7 @@ import {
   type ViewEntityType,
 } from "@/lib/views";
 import { ViewSelector } from "@/components/views/view-selector";
+import { SaveCurrentAsViewButton } from "@/components/views/save-current-as-view-button";
 import {
   Table,
   TableBody,
@@ -93,11 +95,11 @@ export async function DashboardListPage(props: {
     }
   }
 
-  const columns = pickColumns(
-    resolved,
+  const columns = compileColumns({
+    view: resolved,
     customFieldDefs,
-    cfg.default_columns,
-  );
+    fallback: cfg.default_columns,
+  });
   const page = Math.max(1, Number(props.searchParams.page ?? 1) || 1);
 
   const { rows, total, warnings, page_size } = await listNodesByView({
@@ -130,12 +132,21 @@ export async function DashboardListPage(props: {
             basePath={cfg.base_path}
           />
           {perms.has("views:customize") ? (
-            <Link
-              href="/admin/views"
-              className="text-xs text-neutral-600 underline hover:text-neutral-900"
-            >
-              Manage views
-            </Link>
+            <>
+              <SaveCurrentAsViewButton
+                entityType={cfg.entity_type}
+                filters={resolved?.filters ?? []}
+                columns={resolved?.columns ?? cfg.default_columns}
+                sort={resolved?.sort ?? null}
+                basePath={cfg.base_path}
+              />
+              <Link
+                href="/admin/views"
+                className="text-xs text-neutral-600 underline hover:text-neutral-900"
+              >
+                Manage views
+              </Link>
+            </>
           ) : null}
         </div>
       </header>
@@ -200,31 +211,6 @@ export async function DashboardListPage(props: {
       </footer>
     </main>
   );
-}
-
-function pickColumns(
-  view: CustomViewRow | null,
-  customFieldDefs: { field_key: string; label: string }[],
-  fallback: ColumnSpec[],
-): ColumnSpec[] {
-  if (!view || view.columns.length === 0) return fallback;
-  const customByKey = new Map(
-    customFieldDefs.map((f) => [f.field_key, f.label]),
-  );
-  return view.columns
-    .filter((c) => {
-      if (!isCustomFieldRef(c.field)) return true;
-      const k = customFieldKey(c.field);
-      return customByKey.has(k);
-    })
-    .map((c) => {
-      if (c.label) return c;
-      if (isCustomFieldRef(c.field)) {
-        const k = customFieldKey(c.field);
-        return { ...c, label: customByKey.get(k) ?? k };
-      }
-      return c;
-    });
 }
 
 function renderCell(

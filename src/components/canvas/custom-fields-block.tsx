@@ -3,15 +3,20 @@ import type { CanvasLead } from "@/lib/canvas/types";
 import { listFieldsForType } from "@/lib/customfields/admin";
 import type {
   CustomFieldKind,
+  CustomFieldNodeType,
   CustomFieldRow,
 } from "@/lib/customfields/types";
 import { FieldValue, type FieldKind } from "./field-renderers";
 
 /**
  * D-020 — Server Component that fetches the org's custom field
- * definitions for the lead node type and renders them under the canvas
+ * definitions for a node type and renders them under the canvas
  * field block. Empty / undefined values hide the row entirely
  * (progressive disclosure, same as core fields).
+ *
+ * Accepts either:
+ *   - `lead` (legacy shape — for backward compat with lead canvas)
+ *   - `node` + `entityType` (generic — used by contact canvas via D-410)
  */
 
 const KIND_TO_RENDERER: Record<CustomFieldKind, FieldKind> = {
@@ -43,15 +48,30 @@ function displayValue(value: unknown, kind: CustomFieldKind): unknown {
   return value;
 }
 
-export async function CustomFieldsBlock({ lead }: { lead: CanvasLead }) {
-  if (!lead.organization_id) return null;
-  const definitions = await listFieldsForType(lead.organization_id, "lead");
+export type CustomFieldsCarrier = {
+  organization_id: string;
+  data: Record<string, unknown> | unknown;
+};
+
+export type CustomFieldsBlockProps =
+  | { lead: CanvasLead; node?: never; entityType?: never }
+  | { lead?: never; node: CustomFieldsCarrier; entityType: CustomFieldNodeType };
+
+export async function CustomFieldsBlock(props: CustomFieldsBlockProps) {
+  const carrier: CustomFieldsCarrier = props.lead
+    ? { organization_id: props.lead.organization_id, data: props.lead.data }
+    : props.node;
+  const entityType: CustomFieldNodeType = props.lead ? "lead" : props.entityType;
+
+  if (!carrier.organization_id) return null;
+  const definitions = await listFieldsForType(
+    carrier.organization_id,
+    entityType,
+  );
   if (definitions.length === 0) return null;
 
-  type LeadDataWithCustom = {
-    custom?: Record<string, unknown>;
-  };
-  const data = lead.data as unknown as LeadDataWithCustom;
+  type DataWithCustom = { custom?: Record<string, unknown> };
+  const data = carrier.data as unknown as DataWithCustom;
   const custom = (data?.custom ?? {}) as Record<string, unknown>;
 
   const visible = definitions.filter(
