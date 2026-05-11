@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { getDealCanvas } from "@/lib/deals/api";
 import { DEAL_STAGE_ORDER, type DealStage } from "@/lib/deals/transitions";
+import { getDealBookingState } from "@/lib/booking/api";
+import { DealStageTracker } from "@/components/canvas/deal-stage-tracker";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +46,25 @@ export default async function DealCanvasPage(props: {
   if (!user.org_id) redirect("/dashboard");
 
   const { id } = await props.params;
-  const data = await getDealCanvas(id);
+  const [data, bookingState] = await Promise.all([
+    getDealCanvas(id),
+    getDealBookingState(id),
+  ]);
   if (!data) notFound();
 
   const { deal, leads, units, activities } = data;
   const currentStageIdx = DEAL_STAGE_ORDER.indexOf(
     deal.stage as (typeof DEAL_STAGE_ORDER)[number]
   );
+
+  // D-421: post-EOI booking pipeline (orthogonal to the pre-EOI sales funnel
+  // rendered below). currentStage defaults to 'eoi' for any deal that hasn't
+  // been explicitly transitioned — matches the migration backfill.
+  const bookingCurrentStage = bookingState.currentStage ?? "eoi";
+  const isOrgAdmin =
+    user.profile.base_role === "super_admin" ||
+    user.profile.base_role === "org_owner" ||
+    user.profile.base_role === "org_admin";
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -106,6 +120,13 @@ export default async function DealCanvasPage(props: {
           </div>
         </CardContent>
       </Card>
+
+      <DealStageTracker
+        dealId={deal.id}
+        currentStage={bookingCurrentStage}
+        transitions={bookingState.transitions}
+        isOrgAdmin={isOrgAdmin}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-1">
