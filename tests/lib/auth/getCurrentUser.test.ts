@@ -103,6 +103,7 @@ describe("getCurrentUser", () => {
         theme: "system",
         mfa_verified_at: null,
         mfa_enrolled_at: null,
+        view_defaults: {},
       },
       org_id: "org-1",
       workspace_ids: ["ws-1"], // null workspace_ids excluded
