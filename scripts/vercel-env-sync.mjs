@@ -40,6 +40,7 @@ const RUNTIME_VARS = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "MFA_DEMO_MODE",
+  "INTEGRATION_ENCRYPTION_KEY",
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));
