@@ -1,58 +1,41 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { resolveForUser } from "@/lib/auth/permissions";
 import { NewLeadDialogProvider } from "@/components/dashboard/new-lead-dialog-context";
 import { CommandPalette } from "@/components/cmdk/command-palette";
-import { UserMenu } from "@/components/auth/user-menu";
+import { CommandCenterSidebar } from "@/components/shell/command-center-sidebar";
+import { CommandCenterTopbar } from "@/components/shell/command-center-topbar";
+import { CommandBuiltrixBar } from "@/components/shell/command-builtrix-bar";
 
-/**
- * Dashboard route-group layout. Mounts the NewLeadDialog provider
- * (so the Cmd+K palette + the dashboard's "+ New lead" button can
- * both call openDialog()) and the global CommandPalette component
- * (gates command visibility by the user's resolved permissions).
- *
- * Cmd+K is only mounted on (dashboard)/* in V0; admin / platform /
- * settings inherit V1's hoisted root-layout provider. Documented in
- * directives/008-cmdk-bounded-catalog.md.
- *
- * Header carries the UserMenu so any signed-in user (org member,
- * org_admin, channel_partner who routed through /dashboard) can reach
- * their profile or sign out without leaving the surface.
- */
+// (dashboard) is the Command Center surface. We force `.dark` on this
+// subtree regardless of the user's profile preference — the Command
+// Center is a fixed-aesthetic operational view, not a themable shell.
+// Admin / platform / settings inherit the user's preferred theme via
+// the root layout (D-501 will reskin them onto the light Builtrix base).
+//
+// Mounts the existing NewLeadDialogProvider + CommandPalette so Cmd+K
+// keeps working from inside the new shell.
 export default async function DashboardLayout({
   children,
 }: {
   children: ReactNode;
 }) {
   const user = await getCurrentUser();
-  const permsArray: string[] = user
-    ? Array.from(resolveForUser(user))
-    : [];
+  const permsArray: string[] = user ? Array.from(resolveForUser(user)) : [];
 
   return (
     <NewLeadDialogProvider>
-      <div className="min-h-screen flex flex-col">
-        <header className="border-b bg-white">
-          <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between gap-4">
-            <Link
-              href="/dashboard"
-              className="font-semibold tracking-tight text-neutral-900"
-            >
-              Builtrix · Dashboard
-            </Link>
-            {user && (
-              <UserMenu
-                displayName={user.profile.display_name}
-                email={user.user.email}
-                settingsHref="/dashboard/settings"
-                nameClassName="text-xs text-neutral-600"
-                buttonClassName="rounded-md border border-neutral-300 bg-white px-3 py-1 text-xs hover:bg-neutral-100"
-              />
-            )}
+      <div className="dark min-h-screen cc-bg-canvas text-foreground">
+        <div className="flex min-h-screen">
+          <CommandCenterSidebar />
+          <div className="flex min-h-screen flex-1 flex-col min-w-0">
+            <CommandCenterTopbar
+              displayName={user?.profile?.display_name ?? null}
+            />
+            <main className="flex-1">{children}</main>
+            <CommandBuiltrixBar />
           </div>
-        </header>
-        <div className="flex-1">{children}</div>
+        </div>
       </div>
       <CommandPalette visiblePerms={permsArray} />
     </NewLeadDialogProvider>
