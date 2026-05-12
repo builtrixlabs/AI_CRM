@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { STEP_IDS, type StepId } from "@/lib/admin/types";
 
 type Props = {
@@ -72,12 +72,10 @@ export function OnboardingBanner({
             </div>
           </div>
         </div>
-        <Button asChild size="sm">
-          <Link href={resumeHref}>
-            Resume setup
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Link>
-        </Button>
+        <Link href={resumeHref} className={buttonVariants({ size: "sm" })}>
+          Resume setup
+          <ArrowRight className="ml-2 h-4 w-4" />
+        </Link>
       </CardContent>
     </Card>
   );

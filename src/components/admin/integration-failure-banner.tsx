@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 type Channel = "email" | "telephony" | "sms" | "whatsapp";
 
@@ -78,12 +78,10 @@ export function IntegrationFailureBanner({
             </div>
           </div>
         </div>
-        <Button asChild size="sm">
-          <Link href={href}>
-            Configure {copy.label}
-            <ArrowRight className="ml-1 h-4 w-4" />
-          </Link>
-        </Button>
+        <Link href={href} className={buttonVariants({ size: "sm" })}>
+          Configure {copy.label}
+          <ArrowRight className="ml-1 h-4 w-4" />
+        </Link>
       </CardContent>
     </Card>
   );
