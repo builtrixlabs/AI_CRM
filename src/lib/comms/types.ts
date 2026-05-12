@@ -10,6 +10,8 @@ export type ProviderCapabilities = {
 export type CommsErrorKind =
   | "invalid_args"
   | "provider_unavailable"
+  | "provider_error"
+  | "provider_unsupported"
   | "unauthorized"
   | "template_not_found"
   | "rate_limited"
