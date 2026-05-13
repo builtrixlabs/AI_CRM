@@ -7,6 +7,12 @@ import { onBantExtracted } from "./call-audit/onBantExtracted";
 import { onLeadIntentChanged } from "./call-audit/onLeadIntentChanged";
 import { onCallComplianceFlag } from "./call-audit/onCallComplianceFlag";
 import { onCallNextBestAction } from "./call-audit/onCallNextBestAction";
+import {
+  onPostSalesMilestoneUpdated,
+  onPostSalesDemandLetterSent,
+  onPostSalesHandoverCompleted,
+} from "./post-sales";
+import { onLeadIngested } from "./lead-sources";
 
 export type DispatchDeps = {
   client?: SupabaseClient;
@@ -57,6 +63,34 @@ export async function findExistingNodeForEvent(
   return { id: (data[0] as { id: string }).id };
 }
 
+/**
+ * D-443 — look up a prior inbox-log entry for an (org, event_id) pair.
+ * Sister-product events don't create nodes, so the call-audit-style node
+ * dedup doesn't apply; we instead look at the event_inbox_log directly.
+ * Returns the prior log status so the caller can short-circuit.
+ */
+export async function findExistingInboxLogEvent(
+  client: SupabaseClient,
+  organization_id: string,
+  event_id: string
+): Promise<{ status: "ok" | "deduped" | "rejected" | "error" } | null> {
+  const { data, error } = await client
+    .from("event_inbox_log")
+    .select("status")
+    .eq("organization_id", organization_id)
+    .eq("event_id", event_id)
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  return data[0] as { status: "ok" | "deduped" | "rejected" | "error" };
+}
+
+const SISTER_PRODUCT_EVENT_KINDS = new Set([
+  "post_sales.milestone_updated",
+  "post_sales.demand_letter_sent",
+  "post_sales.handover_completed",
+  "lead.ingested",
+]);
+
 export async function dispatchInboxEvent(
   envelope: BuiltrixEvent,
   deps: DispatchDeps = {}
@@ -72,29 +106,48 @@ export async function dispatchInboxEvent(
     };
   }
 
-  const dedup = await findExistingNodeForEvent(
-    client,
-    envelope.organization_id,
-    envelope.event_id
-  );
-  if (dedup) {
-    await recordInboxIngestion(
-      {
-        organization_id: envelope.organization_id,
-        event_id: envelope.event_id,
-        event_kind: envelope.event_kind,
-        source_product: envelope.source_product,
-        status: "deduped",
-        resulting_node_id: dedup.id,
-      },
-      client
+  // D-443: sister-product events dedupe via event_inbox_log because they
+  // don't create nodes. Call-audit / Voice IQ events stay on the legacy
+  // node-based dedup.
+  if (SISTER_PRODUCT_EVENT_KINDS.has(envelope.event_kind)) {
+    const priorLog = await findExistingInboxLogEvent(
+      client,
+      envelope.organization_id,
+      envelope.event_id
     );
-    return {
-      ok: true,
-      status: "deduped",
-      deduped: true,
-      node_id: dedup.id,
-    };
+    if (priorLog) {
+      return {
+        ok: true,
+        status: "deduped",
+        deduped: true,
+        node_id: null,
+      };
+    }
+  } else {
+    const dedup = await findExistingNodeForEvent(
+      client,
+      envelope.organization_id,
+      envelope.event_id
+    );
+    if (dedup) {
+      await recordInboxIngestion(
+        {
+          organization_id: envelope.organization_id,
+          event_id: envelope.event_id,
+          event_kind: envelope.event_kind,
+          source_product: envelope.source_product,
+          status: "deduped",
+          resulting_node_id: dedup.id,
+        },
+        client
+      );
+      return {
+        ok: true,
+        status: "deduped",
+        deduped: true,
+        node_id: dedup.id,
+      };
+    }
   }
 
   // Route by event_kind.
@@ -112,6 +165,14 @@ export async function dispatchInboxEvent(
       result = await onCallComplianceFlag(envelope, { client });
     } else if (envelope.event_kind === "call.next_best_action") {
       result = await onCallNextBestAction(envelope, { client });
+    } else if (envelope.event_kind === "post_sales.milestone_updated") {
+      result = await onPostSalesMilestoneUpdated(envelope, { client });
+    } else if (envelope.event_kind === "post_sales.demand_letter_sent") {
+      result = await onPostSalesDemandLetterSent(envelope, { client });
+    } else if (envelope.event_kind === "post_sales.handover_completed") {
+      result = await onPostSalesHandoverCompleted(envelope, { client });
+    } else if (envelope.event_kind === "lead.ingested") {
+      result = await onLeadIngested(envelope, { client });
     } else {
       result = {
         ok: false,
