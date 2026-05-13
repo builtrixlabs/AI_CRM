@@ -21,6 +21,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { enqueueDelivery } from "./deliver";
+import { isSisterProductEventKind } from "@/lib/integrations/sister-products/event-kinds";
+
+// D-442 — surface drift: warn-only when an emit slips in with a kind outside
+// the canonical sister-product enum. We don't reject because v3 emit sites
+// (call_audit / voice_iq) still legitimately use their own kinds; this is a
+// "this is probably new and undocumented" signal, not a guard rail.
+function maybeWarnUnknownKind(event_kind: string): void {
+  if (
+    event_kind.includes(".") &&
+    !isSisterProductEventKind(event_kind) &&
+    !event_kind.startsWith("call.") &&
+    !event_kind.startsWith("voice_iq.") &&
+    !event_kind.startsWith("legal.")
+  ) {
+    console.warn(
+      `[emit-event] unknown_event_kind: ${event_kind} (not in canonical sister-product enum; add to src/lib/integrations/sister-products/event-kinds.ts if it should be subscribable)`,
+    );
+  }
+}
 
 export type EmitResult = {
   total_endpoints: number;
@@ -60,6 +79,7 @@ export async function emitEvent(
   payload: Record<string, unknown>,
   client: SupabaseClient = getSupabaseAdmin(),
 ): Promise<EmitResult> {
+  maybeWarnUnknownKind(event_kind);
   const result: EmitResult = {
     total_endpoints: 0,
     matched_endpoints: 0,
