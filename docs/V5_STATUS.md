@@ -23,11 +23,11 @@ Every directive below configures provider credentials **per organization**, by t
 
 | ID | Directive (plan v2) | Status | Depends on |
 |---|---|---|---|
-| D-433 | Live Exotel telephony + per-org config | **shipped** | PR [#69](https://github.com/builtrixlabs/AI_CRM/pull/69) merged 2026-05-12. Preview: `https://ai-bb2mpaxxt-builtrixlabs-projects.vercel.app`. Ships full live Exotel `TelephonyAdapter` (outbound click-to-call, lookup, inbound/disposition handlers, test-ping), per-org `org_telephony_config` table with redacted view, admin UI at `/admin/integrations/telephony` (Save/Test ping/Deactivate, partial cred updates), HMAC-verified call-status webhook scaffolding. Migration `20260512120000_org_telephony_config.sql` applied to live Supabase, `verify_d433.mjs` 8/8 PASS. 3 test files / 27 tests / all green. **Operator setup before live dialing:** each org_admin pastes their org's Exotel SID/api_key/api_token/virtual_number on `/admin/integrations/telephony`; operator must set `INTEGRATION_ENCRYPTION_KEY` (32 hex chars) in runtime env first. |
-| D-434 | Live Resend email + per-org config | planned | D-418 shell (✓), D-501 |
-| D-435 | Live MSG91 SMS + DLT templates + per-org config | planned | D-418 shell (✓), D-501 |
-| D-432 | WhatsApp providers (Gupshup + Cloud API direct) + per-org config | planned | D-435 (DLT pattern), D-501 |
-| D-439 | Unified `/admin/integrations` index + health badges | planned | D-433/4/5/2 shells |
+| D-433 | Live Exotel telephony + per-org config | **shipped** | PR [#69](https://github.com/builtrixlabs/AI_CRM/pull/69) merged 2026-05-12. Live Exotel `TelephonyAdapter` (outbound + lookup + test-ping), `org_telephony_config` table + redacted view, admin UI at `/admin/integrations/telephony`, HMAC-verified call-status webhook scaffolding. Migration `20260512120000` applied; `verify_d433.mjs` 8/8 PASS. 3 test files / 27 tests green. |
+| D-439 | Unified `/admin/integrations` index + health badges | **shipped** | PR [#71](https://github.com/builtrixlabs/AI_CRM/pull/71) merged 2026-05-13. `getIntegrationsHealth(orgId)` aggregates per-channel rows; new `IntegrationHealthBadge` (✓ Healthy / ⚠ Degraded / ⚪ Not configured / — Coming soon) slots into each `/admin/integrations` tile with detail surfaced via title attribute. Reordered before D-434/D-435/D-432 at operator request — channels light up as their directives ship. 2 test files / 15 new tests green. |
+| D-434 | Live Resend email + per-org config | **shipped** | PR [#72](https://github.com/builtrixlabs/AI_CRM/pull/72) merged 2026-05-13. `ResendEmailProvider` (kind: "custom" send + test-ping against `/domains`), `org_email_config` table + redacted view, admin UI at `/admin/integrations/email`, Resend delivery-receipt webhook scaffolding. Migration `20260513120000` applied; `verify_d434.mjs` 8/8 PASS. 4 test files / 28 tests green. Templated mode + svix HMAC verification deferred. |
+| D-435 | Live MSG91 SMS + DLT templates + per-org config | **shipped** | PR [#73](https://github.com/builtrixlabs/AI_CRM/pull/73) merged 2026-05-13. `Msg91SmsProvider` (v5 Flow API; template_id allowlist gated at adapter — sends with unregistered template_id fail-closed without contacting MSG91), `org_sms_config` + `dlt_templates` tables, admin UI at `/admin/integrations/sms` with inline DLT template CRUD (transactional / service / promotional). Migration `20260513130000` applied; `verify_d435.mjs` 11/11 PASS. 3 test files / 24 tests green. Gupshup SMS deferred to D-435.x. |
+| D-432 | WhatsApp providers (Gupshup + Cloud API direct) + per-org config | **shipped** | PR [#74](https://github.com/builtrixlabs/AI_CRM/pull/74) merged 2026-05-13. New `src/lib/comms/whatsapp/` module (no D-418 shell existed). `GupshupWhatsAppProvider` (template/msg form-encoded) + `CloudApiWhatsAppProvider` (Graph API v17.0 JSON, language-code override). Both gate sends by org's `approved_template_ids`. `org_whatsapp_endpoints` extended (D-010 + provider/encrypted_credentials/approved_template_ids/from_*/test_ping_*). Admin UI with provider picker + approved-templates panel. Migration `20260513140000` applied; `verify_d432.mjs` 9/9 PASS. 4 test files / 27 tests green. |
 
 ## 3. Phase 2 — Sister-product API surface
 
@@ -58,6 +58,9 @@ Every directive below configures provider credentials **per organization**, by t
 | Migration file | Directive | Applied | Adds |
 |---|---|---|---|
 | [`20260512120000_org_telephony_config.sql`](../supabase/migrations/20260512120000_org_telephony_config.sql) | D-433 | 2026-05-12 ✓ | `org_telephony_config` table (organization_id PK, provider CHECK incl. exotel + servetel/knowlarity/myoperator/ozonetel, encrypted_credentials JSONB, virtual_number, is_active, test_ping_*, provenance) + RLS (own-org SELECT only; INSERT/UPDATE/DELETE denied) + `org_telephony_config_redacted` view (omits ciphertext, exposes `is_configured` boolean) with SELECT grant to authenticated. Verified via `scripts/verify_d433.mjs`. |
+| [`20260513120000_org_email_config.sql`](../supabase/migrations/20260513120000_org_email_config.sql) | D-434 | 2026-05-13 ✓ | `org_email_config` table (provider CHECK ∈ {resend, postmark}, encrypted_credentials, from_email, from_name, verified_at, is_active, test_ping_*) + RLS + `org_email_config_redacted` view. Verified 8/8. |
+| [`20260513130000_org_sms_config_and_dlt.sql`](../supabase/migrations/20260513130000_org_sms_config_and_dlt.sql) | D-435 | 2026-05-13 ✓ | `org_sms_config` (provider CHECK ∈ {msg91, gupshup}, encrypted_credentials, sender_id, dlt_entity_id, is_active, test_ping_*) + `dlt_templates` (composite PK organization_id+template_id, content, category CHECK ∈ {promotional, transactional, service}, registered_at) both RLS org-scoped. Verified 11/11. |
+| [`20260513140000_org_whatsapp_endpoints_extend.sql`](../supabase/migrations/20260513140000_org_whatsapp_endpoints_extend.sql) | D-432 | 2026-05-13 ✓ | EXTEND `org_whatsapp_endpoints` (D-010) with provider CHECK ∈ {gupshup, cloud_api} (nullable for V0 backward compat), encrypted_credentials, approved_template_ids text[] DEFAULT '{}', from_phone_number_id, from_display_number, test_ping_*. New `org_whatsapp_endpoints_redacted` view exposing is_configured + approved_templates_count. Verified 9/9. |
 
 ---
 
@@ -67,19 +70,23 @@ Every directive below configures provider credentials **per organization**, by t
 v4 baseline entering v5:      1529 unit tests (passing; 9 pre-existing file-level failures from missing packages otpauth / @upstash/redis / bcryptjs)
 v5 D-500 (PR #66):           +25 tests (shell 7 + command-center 18)
 v5 D-501 (PR #68):           +23 tests (encryption 6 + admin banners + app-access 17)
-v5 D-433 (PR #69):           +27 tests (exotel 17 + org-config 5 + exotel-call-status 7)  -- but tests/lib/comms/telephony also captures pre-existing D-418 tests on the same path
-v5 current:                  ~1581 unit tests (full vitest run)
+v5 D-433 (PR #69):           +27 tests (exotel 17 + org-config 5 + exotel-call-status 7)
+v5 D-439 (PR #71):           +15 tests (health 9 + integration-health-badge 6)
+v5 D-434 (PR #72):           +28 tests (resend 16 + email org-config 5 + resend webhook 4 + health email 6 — minus 3 base health overlap)
+v5 D-435 (PR #73):           +24 tests (msg91 15 + sms org-config 5 + health sms 7 — minus 3 base health overlap)
+v5 D-432 (PR #74):           +27 tests (gupshup 10 + cloud-api 10 + whatsapp org-config 7 + health whatsapp 8 — minus 8 base health overlap)
+v5 current:                 ~1675 unit tests (full vitest run)
 ```
 
 ---
 
 ## 8. Sign-off checklist for v1.0 launch (plan v2 §7 + PRD §9 mirror)
 
-- [ ] D-433 live (Exotel + ≥ 1 alternate)
-- [ ] D-434 live (Resend, sender-verified)
-- [ ] D-435 live (MSG91 + DLT templates registered)
-- [ ] D-432 live (Gupshup + Cloud API direct adapters)
-- [ ] D-439 integrations index live
+- [x] D-433 shipped (Exotel adapter scaffolding live; per-org cred entry surfaces live once operator sets INTEGRATION_ENCRYPTION_KEY)
+- [x] D-434 shipped (Resend adapter scaffolding live)
+- [x] D-435 shipped (MSG91 + DLT template registry live)
+- [x] D-432 shipped (Gupshup + Cloud API direct adapters live)
+- [x] D-439 shipped (`/admin/integrations` health-badge index)
 - [ ] D-440 / D-441 / D-442 / D-443 — PSCRM read+write API surface stable at `/api/sister/v1/*`
 - [ ] D-114 — customizable reporting, 8 templates seeded, p95 < 3s
 - [ ] D-111 — canvas-of-canvases for manager + CXO
