@@ -9,18 +9,21 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import {
+  getIntegrationsHealth,
+  type ChannelHealth,
+  type ChannelId,
+} from "@/lib/integrations/health";
+import { IntegrationHealthBadge } from "@/components/admin/integration-health-badge";
 
 export const dynamic = "force-dynamic";
 
-type ChannelStatus = "available" | "coming_soon";
-
 type Channel = {
-  slug: string;
+  slug: ChannelId;
   name: string;
   description: string;
   href: string;
   Icon: LucideIcon;
-  status: ChannelStatus;
 };
 
 const CHANNELS: Channel[] = [
@@ -31,7 +34,6 @@ const CHANNELS: Channel[] = [
       "Click-to-call and inbound call capture. Plug in your org's Exotel, Servetel, Knowlarity, MyOperator, or Ozonetel credentials.",
     href: "/admin/integrations/telephony",
     Icon: Phone,
-    status: "available",
   },
   {
     slug: "email",
@@ -40,7 +42,6 @@ const CHANNELS: Channel[] = [
       "Transactional + follow-up email. Resend (recommended) or Postmark — your sender, your domain.",
     href: "/admin/integrations/email",
     Icon: Mail,
-    status: "coming_soon",
   },
   {
     slug: "sms",
@@ -49,7 +50,6 @@ const CHANNELS: Channel[] = [
       "DLT-compliant SMS via MSG91 or Gupshup with org-managed template registry.",
     href: "/admin/integrations/sms",
     Icon: MessageSquare,
-    status: "coming_soon",
   },
   {
     slug: "whatsapp",
@@ -58,16 +58,14 @@ const CHANNELS: Channel[] = [
       "Conversational outbound + inbound via Gupshup BSP or Meta Cloud API. Approved templates per org.",
     href: "/admin/integrations/whatsapp",
     Icon: MessageCircle,
-    status: "coming_soon",
   },
   {
     slug: "voice_iq",
     name: "Voice IQ",
     description:
-      "BANT-scored call audit webhook from the Voice IQ sister product. Already configurable.",
+      "BANT-scored call audit webhook from the Voice IQ sister product.",
     href: "/admin/integrations/voice-iq",
     Icon: Mic,
-    status: "available",
   },
 ];
 
@@ -75,6 +73,11 @@ export default async function IntegrationsIndexPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/auth/sign-in");
   if (!user.org_id) redirect("/dashboard");
+
+  const health = await getIntegrationsHealth(user.org_id);
+  const healthBySlug = new Map<ChannelId, ChannelHealth>(
+    health.map((h) => [h.channel, h]),
+  );
 
   return (
     <div className="space-y-6">
@@ -89,16 +92,33 @@ export default async function IntegrationsIndexPage() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {CHANNELS.map((c) => (
-          <ChannelTile key={c.slug} channel={c} />
+          <ChannelTile
+            key={c.slug}
+            channel={c}
+            health={
+              healthBySlug.get(c.slug) ?? {
+                channel: c.slug,
+                status: "unavailable",
+                detail: "",
+                last_check_at: null,
+              }
+            }
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function ChannelTile({ channel }: { channel: Channel }) {
+function ChannelTile({
+  channel,
+  health,
+}: {
+  channel: Channel;
+  health: ChannelHealth;
+}) {
   const Icon = channel.Icon;
-  const dim = channel.status === "coming_soon";
+  const dim = health.status === "unavailable";
   const inner = (
     <div
       className={[
@@ -108,16 +128,22 @@ function ChannelTile({ channel }: { channel: Channel }) {
           : "hover:border-[color:var(--amethyst-500)]/60",
       ].join(" ")}
     >
-      <div className="flex items-start justify-between pb-3">
+      <div className="flex items-start justify-between gap-3 pb-3">
         <div className="flex items-center gap-2 font-semibold">
           <Icon className="h-5 w-5" style={{ color: "var(--amethyst-700)" }} />
           {channel.name}
         </div>
-        {dim ? (
-          <span className="text-xs text-muted-foreground">Coming soon</span>
-        ) : null}
+        <IntegrationHealthBadge
+          status={health.status}
+          detail={health.detail}
+        />
       </div>
       <p className="text-sm text-muted-foreground">{channel.description}</p>
+      {health.last_check_at && (
+        <p className="mt-2 text-[11px] text-muted-foreground/80">
+          Last check: {new Date(health.last_check_at).toLocaleString()}
+        </p>
+      )}
     </div>
   );
   if (dim) return inner;
