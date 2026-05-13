@@ -64,6 +64,18 @@ type SmsRedacted = {
   test_ping_message: string | null;
 } | null;
 
+type WhatsAppRedacted = {
+  is_configured: boolean | null;
+  is_active: boolean | null;
+  provider: string | null;
+  from_phone_number_id: string | null;
+  from_display_number: string | null;
+  approved_templates_count: number | null;
+  test_ping_at: string | null;
+  test_ping_ok: boolean | null;
+  test_ping_message: string | null;
+} | null;
+
 type SecretRedacted = {
   rotated_at: string | null;
 } | null;
@@ -227,6 +239,79 @@ export function buildSmsHealth(row: SmsRedacted): ChannelHealth {
 }
 
 /**
+ * Build a health row from a WhatsApp endpoint (D-432). Same truth table
+ * as SMS, with provider-specific from-routing requirements:
+ *   - gupshup needs from_display_number
+ *   - cloud_api needs from_phone_number_id
+ * Plus "no approved templates" warning — sends will fail-closed.
+ */
+export function buildWhatsAppHealth(
+  row: WhatsAppRedacted,
+): ChannelHealth {
+  if (!row || !row.is_configured) {
+    return {
+      channel: "whatsapp",
+      status: "not_configured",
+      detail: "No credentials saved",
+      last_check_at: null,
+    };
+  }
+  if (!row.is_active) {
+    return {
+      channel: "whatsapp",
+      status: "not_configured",
+      detail: "Deactivated by org admin",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  const needsDisplay =
+    row.provider === "gupshup" && !row.from_display_number;
+  const needsPhoneId =
+    row.provider === "cloud_api" && !row.from_phone_number_id;
+  if (needsDisplay || needsPhoneId) {
+    return {
+      channel: "whatsapp",
+      status: "warning",
+      detail: needsDisplay
+        ? "Gupshup active but from_display_number missing"
+        : "Cloud API active but from_phone_number_id missing",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.approved_templates_count || row.approved_templates_count === 0) {
+    return {
+      channel: "whatsapp",
+      status: "warning",
+      detail:
+        "Active but no approved templates registered — sends will fail",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.test_ping_at) {
+    return {
+      channel: "whatsapp",
+      status: "warning",
+      detail: "Active but never test-pinged — run Test ping",
+      last_check_at: null,
+    };
+  }
+  if (!row.test_ping_ok) {
+    return {
+      channel: "whatsapp",
+      status: "warning",
+      detail: row.test_ping_message ?? "Last test ping failed",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  return {
+    channel: "whatsapp",
+    status: "healthy",
+    detail: "Test ping ok",
+    last_check_at: row.test_ping_at,
+  };
+}
+
+/**
  * Build a health row for Voice IQ. The voice_iq integration stores only an
  * HMAC secret; presence = healthy. No "active" notion because the secret
  * is consumed inline by incoming webhooks (no scheduled jobs to fail).
@@ -251,7 +336,7 @@ export function buildVoiceIqHealth(row: SecretRedacted): ChannelHealth {
 const UNAVAILABLE_LABELS: Record<ChannelId, string> = {
   email: "",
   sms: "",
-  whatsapp: "D-432 ships Gupshup + Cloud API per-org config",
+  whatsapp: "",
   telephony: "",
   voice_iq: "",
 };
@@ -297,6 +382,15 @@ export async function getIntegrationsHealth(
     .eq("organization_id", orgId)
     .maybeSingle();
 
+  // WhatsApp (D-432) — redacted endpoint view.
+  const { data: whatsapp } = await supabase
+    .from("org_whatsapp_endpoints_redacted")
+    .select(
+      "is_configured, is_active, provider, from_phone_number_id, from_display_number, approved_templates_count, test_ping_at, test_ping_ok, test_ping_message",
+    )
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
   // Voice IQ (D-132) — redacted secret view.
   const { data: voiceIq } = await supabase
     .from("org_integration_secrets_redacted")
@@ -309,7 +403,7 @@ export async function getIntegrationsHealth(
     buildTelephonyHealth(telephony as TelephonyRedacted),
     buildEmailHealth(email as EmailRedacted),
     buildSmsHealth(sms as SmsRedacted),
-    unavailable("whatsapp"),
+    buildWhatsAppHealth(whatsapp as WhatsAppRedacted),
     buildVoiceIqHealth(voiceIq as SecretRedacted),
   ];
 }
