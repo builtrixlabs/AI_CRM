@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole, BaseRole, CurrentUser } from "./types";
@@ -30,9 +31,30 @@ type AppRoleRow = {
  *
  * Accepts an optional client for testing; production calls pass none and
  * receive a request-scoped server client built from cookies().
+ *
+ * Perf — the no-arg path is wrapped in React's `cache()` so a single
+ * server-component render (layout → page → nested components) pays the
+ * 4 DB roundtrips (auth.getUser + profiles SELECT + revocation RPC +
+ * user_app_roles SELECT) **once** instead of N times. Before this:
+ * /dashboard burned ~8 roundtrips per nav (layout + page both calling
+ * getCurrentUser); after, it's 4. The `client?` overload bypasses the
+ * cache because the cache key would be the client argument — passing a
+ * fresh client every call defeats dedupe.
  */
 export async function getCurrentUser(
   client?: SupabaseClient
+): Promise<CurrentUser | null> {
+  if (!client) return _getCurrentUserCached();
+  return _getCurrentUserImpl(client);
+}
+
+/** Cached per request — `cache()` dedupes across server-component callers. */
+const _getCurrentUserCached = cache(
+  async (): Promise<CurrentUser | null> => _getCurrentUserImpl(undefined),
+);
+
+async function _getCurrentUserImpl(
+  client?: SupabaseClient,
 ): Promise<CurrentUser | null> {
   const c = client ?? (await createSupabaseServerClient());
 
