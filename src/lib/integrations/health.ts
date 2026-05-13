@@ -54,6 +54,16 @@ type EmailRedacted = {
   test_ping_message: string | null;
 } | null;
 
+type SmsRedacted = {
+  is_configured: boolean | null;
+  is_active: boolean | null;
+  sender_id: string | null;
+  dlt_entity_id: string | null;
+  test_ping_at: string | null;
+  test_ping_ok: boolean | null;
+  test_ping_message: string | null;
+} | null;
+
 type SecretRedacted = {
   rotated_at: string | null;
 } | null;
@@ -163,6 +173,60 @@ export function buildEmailHealth(row: EmailRedacted): ChannelHealth {
 }
 
 /**
+ * Build a health row from an SMS config (D-435). Same truth table as
+ * email, plus an extra warning state when DLT bits (sender_id /
+ * dlt_entity_id) are missing — sends will fail-closed without them.
+ */
+export function buildSmsHealth(row: SmsRedacted): ChannelHealth {
+  if (!row || !row.is_configured) {
+    return {
+      channel: "sms",
+      status: "not_configured",
+      detail: "No credentials saved",
+      last_check_at: null,
+    };
+  }
+  if (!row.is_active) {
+    return {
+      channel: "sms",
+      status: "not_configured",
+      detail: "Deactivated by org admin",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.sender_id || !row.dlt_entity_id) {
+    return {
+      channel: "sms",
+      status: "warning",
+      detail: "Active but DLT sender_id / dlt_entity_id missing",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.test_ping_at) {
+    return {
+      channel: "sms",
+      status: "warning",
+      detail: "Active but never test-pinged — run Test ping",
+      last_check_at: null,
+    };
+  }
+  if (!row.test_ping_ok) {
+    return {
+      channel: "sms",
+      status: "warning",
+      detail: row.test_ping_message ?? "Last test ping failed",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  return {
+    channel: "sms",
+    status: "healthy",
+    detail: "Test ping ok",
+    last_check_at: row.test_ping_at,
+  };
+}
+
+/**
  * Build a health row for Voice IQ. The voice_iq integration stores only an
  * HMAC secret; presence = healthy. No "active" notion because the secret
  * is consumed inline by incoming webhooks (no scheduled jobs to fail).
@@ -186,7 +250,7 @@ export function buildVoiceIqHealth(row: SecretRedacted): ChannelHealth {
 
 const UNAVAILABLE_LABELS: Record<ChannelId, string> = {
   email: "",
-  sms: "D-435 ships MSG91 + DLT per-org config",
+  sms: "",
   whatsapp: "D-432 ships Gupshup + Cloud API per-org config",
   telephony: "",
   voice_iq: "",
@@ -224,6 +288,15 @@ export async function getIntegrationsHealth(
     .eq("organization_id", orgId)
     .maybeSingle();
 
+  // SMS (D-435) — redacted view.
+  const { data: sms } = await supabase
+    .from("org_sms_config_redacted")
+    .select(
+      "is_configured, is_active, sender_id, dlt_entity_id, test_ping_at, test_ping_ok, test_ping_message",
+    )
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
   // Voice IQ (D-132) — redacted secret view.
   const { data: voiceIq } = await supabase
     .from("org_integration_secrets_redacted")
@@ -235,7 +308,7 @@ export async function getIntegrationsHealth(
   return [
     buildTelephonyHealth(telephony as TelephonyRedacted),
     buildEmailHealth(email as EmailRedacted),
-    unavailable("sms"),
+    buildSmsHealth(sms as SmsRedacted),
     unavailable("whatsapp"),
     buildVoiceIqHealth(voiceIq as SecretRedacted),
   ];

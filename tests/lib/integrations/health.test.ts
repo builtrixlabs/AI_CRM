@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTelephonyHealth,
   buildEmailHealth,
+  buildSmsHealth,
   buildVoiceIqHealth,
 } from "@/lib/integrations/health";
 
@@ -160,6 +161,97 @@ describe("buildEmailHealth", () => {
       test_ping_at: "2026-05-13T10:00:00Z",
       test_ping_ok: true,
       test_ping_message: "api key verified",
+    });
+    expect(h.status).toBe("healthy");
+    expect(h.last_check_at).toBe("2026-05-13T10:00:00Z");
+  });
+});
+
+describe("buildSmsHealth", () => {
+  it("reports not_configured when no row exists", () => {
+    const h = buildSmsHealth(null);
+    expect(h.status).toBe("not_configured");
+    expect(h.detail).toMatch(/No credentials saved/i);
+  });
+
+  it("reports not_configured (deactivated) when is_active=false", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: false,
+      sender_id: "BLTRIX",
+      dlt_entity_id: "1701",
+      test_ping_at: "2026-05-13T10:00:00Z",
+      test_ping_ok: true,
+      test_ping_message: null,
+    });
+    expect(h.status).toBe("not_configured");
+    expect(h.detail).toMatch(/Deactivated/);
+  });
+
+  it("reports warning when active but sender_id missing", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: true,
+      sender_id: null,
+      dlt_entity_id: "1701",
+      test_ping_at: null,
+      test_ping_ok: null,
+      test_ping_message: null,
+    });
+    expect(h.status).toBe("warning");
+    expect(h.detail).toMatch(/sender_id \/ dlt_entity_id missing/i);
+  });
+
+  it("reports warning when active but dlt_entity_id missing", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: true,
+      sender_id: "BLTRIX",
+      dlt_entity_id: null,
+      test_ping_at: null,
+      test_ping_ok: null,
+      test_ping_message: null,
+    });
+    expect(h.status).toBe("warning");
+  });
+
+  it("reports warning when active but never test-pinged", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: true,
+      sender_id: "BLTRIX",
+      dlt_entity_id: "1701",
+      test_ping_at: null,
+      test_ping_ok: null,
+      test_ping_message: null,
+    });
+    expect(h.status).toBe("warning");
+    expect(h.detail).toMatch(/never test-pinged/i);
+  });
+
+  it("reports warning when active + last test_ping_ok=false", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: true,
+      sender_id: "BLTRIX",
+      dlt_entity_id: "1701",
+      test_ping_at: "2026-05-13T10:00:00Z",
+      test_ping_ok: false,
+      test_ping_message: "401 — invalid authkey",
+    });
+    expect(h.status).toBe("warning");
+    expect(h.detail).toBe("401 — invalid authkey");
+  });
+
+  it("reports healthy when active + DLT bits set + last test_ping_ok=true", () => {
+    const h = buildSmsHealth({
+      is_configured: true,
+      is_active: true,
+      sender_id: "BLTRIX",
+      dlt_entity_id: "1701",
+      test_ping_at: "2026-05-13T10:00:00Z",
+      test_ping_ok: true,
+      test_ping_message: "authkey verified",
     });
     expect(h.status).toBe("healthy");
     expect(h.last_check_at).toBe("2026-05-13T10:00:00Z");
