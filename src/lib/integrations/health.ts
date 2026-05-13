@@ -44,6 +44,16 @@ type TelephonyRedacted = {
   test_ping_message: string | null;
 } | null;
 
+type EmailRedacted = {
+  is_configured: boolean | null;
+  is_active: boolean | null;
+  from_email: string | null;
+  verified_at: string | null;
+  test_ping_at: string | null;
+  test_ping_ok: boolean | null;
+  test_ping_message: string | null;
+} | null;
+
 type SecretRedacted = {
   rotated_at: string | null;
 } | null;
@@ -99,6 +109,60 @@ export function buildTelephonyHealth(row: TelephonyRedacted): ChannelHealth {
 }
 
 /**
+ * Build a health row from an email config (D-434). Same truth table as
+ * telephony, with one extra warning state: configured + active but
+ * sender unverified — Resend rejects sends from unverified domains.
+ */
+export function buildEmailHealth(row: EmailRedacted): ChannelHealth {
+  if (!row || !row.is_configured) {
+    return {
+      channel: "email",
+      status: "not_configured",
+      detail: "No credentials saved",
+      last_check_at: null,
+    };
+  }
+  if (!row.is_active) {
+    return {
+      channel: "email",
+      status: "not_configured",
+      detail: "Deactivated by org admin",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.from_email) {
+    return {
+      channel: "email",
+      status: "warning",
+      detail: "Active but no from_email set — sends will fail",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  if (!row.test_ping_at) {
+    return {
+      channel: "email",
+      status: "warning",
+      detail: "Active but never test-pinged — run Test ping",
+      last_check_at: null,
+    };
+  }
+  if (!row.test_ping_ok) {
+    return {
+      channel: "email",
+      status: "warning",
+      detail: row.test_ping_message ?? "Last test ping failed",
+      last_check_at: row.test_ping_at,
+    };
+  }
+  return {
+    channel: "email",
+    status: "healthy",
+    detail: "Test ping ok",
+    last_check_at: row.test_ping_at,
+  };
+}
+
+/**
  * Build a health row for Voice IQ. The voice_iq integration stores only an
  * HMAC secret; presence = healthy. No "active" notion because the secret
  * is consumed inline by incoming webhooks (no scheduled jobs to fail).
@@ -121,7 +185,7 @@ export function buildVoiceIqHealth(row: SecretRedacted): ChannelHealth {
 }
 
 const UNAVAILABLE_LABELS: Record<ChannelId, string> = {
-  email: "D-434 ships Resend per-org config",
+  email: "",
   sms: "D-435 ships MSG91 + DLT per-org config",
   whatsapp: "D-432 ships Gupshup + Cloud API per-org config",
   telephony: "",
@@ -151,6 +215,15 @@ export async function getIntegrationsHealth(
     .eq("organization_id", orgId)
     .maybeSingle();
 
+  // Email (D-434) — redacted view.
+  const { data: email } = await supabase
+    .from("org_email_config_redacted")
+    .select(
+      "is_configured, is_active, from_email, verified_at, test_ping_at, test_ping_ok, test_ping_message",
+    )
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
   // Voice IQ (D-132) — redacted secret view.
   const { data: voiceIq } = await supabase
     .from("org_integration_secrets_redacted")
@@ -161,7 +234,7 @@ export async function getIntegrationsHealth(
 
   return [
     buildTelephonyHealth(telephony as TelephonyRedacted),
-    unavailable("email"),
+    buildEmailHealth(email as EmailRedacted),
     unavailable("sms"),
     unavailable("whatsapp"),
     buildVoiceIqHealth(voiceIq as SecretRedacted),
