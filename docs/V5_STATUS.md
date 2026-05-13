@@ -33,10 +33,10 @@ Every directive below configures provider credentials **per organization**, by t
 
 | ID | Directive | Status | Depends on |
 |---|---|---|---|
-| D-440 | Per-org sister-product API tokens | planned | Voice IQ pattern (D-132 / D-134 ✓) |
-| D-441 | Read API for PSCRM / lead-sources (deals, contacts, units, leads) | planned | D-440 |
-| D-442 | Outbound event emissions for sister products | planned | D-311 webhook worker (✓) |
-| D-443 | Inbound event handlers from sister products | planned | D-013 event inbox (✓) |
+| D-440 | Per-org sister-product API tokens | **shipped** | PR [#76](https://github.com/builtrixlabs/AI_CRM/pull/76) merged 2026-05-13. SHA-256-hashed bearer tokens scoped to (organization_id, product_kind). Super-admin UI at `/platform/sister-products` for issue/revoke (plaintext shown once, copy-now-or-lose-it semantics). `authenticateSisterProductRequest(req)` middleware backs D-441/442/443. Migration `20260513150000` applied; `verify_d440.mjs` 7/7 PASS. 2 test files / 17 tests green. |
+| D-442 | Outbound event emissions for sister products | **shipped** | PR [#77](https://github.com/builtrixlabs/AI_CRM/pull/77) merged 2026-05-13. Canonical `SISTER_PRODUCT_EVENT_KINDS` enum (13 kinds across deal/lead/site_visit/contact lifecycles) + zod payload schemas + typed `emitDealStageTransitioned` etc. helpers in `src/lib/integrations/sister-products/`. `emitEvent` warns on unknown kinds (drift detection, additive). Per-org by signature. 2 test files / 27 tests green. Mutation-seam wiring (calling helpers from transition_stage RPC etc.) lands as small follow-up patches. |
+| D-443 | Inbound event handlers from sister products | **shipped** | PR [#78](https://github.com/builtrixlabs/AI_CRM/pull/78) merged 2026-05-13. `/api/sister/events/inbox` Bearer-auth POST route + 4 new handlers (post_sales.milestone_updated / demand_letter_sent / handover_completed, lead.ingested). Three-layer cross-tenant fail-closed (auth / envelope-org-match / source-product-and-event-kind-allowlist). `source_product` enum extended with `post_sales_crm` + `lead_sources`. New `findExistingInboxLogEvent()` dedup for sister-product events; legacy call-audit `findExistingNodeForEvent` untouched. 3 test files / 22 tests green. |
+| D-441 | Read API for PSCRM / lead-sources (deals, contacts, units, leads) | planned (pending operator approval) | D-440 (✓). Backend-only REST endpoints under `/api/sister/v1/*` consuming D-440 tokens. Per-org / per-product_kind scoped, cursor-paginated, response shape versioned at v1. |
 
 ## 4. Phase 3 — Reporting + oversight
 
@@ -61,6 +61,7 @@ Every directive below configures provider credentials **per organization**, by t
 | [`20260513120000_org_email_config.sql`](../supabase/migrations/20260513120000_org_email_config.sql) | D-434 | 2026-05-13 ✓ | `org_email_config` table (provider CHECK ∈ {resend, postmark}, encrypted_credentials, from_email, from_name, verified_at, is_active, test_ping_*) + RLS + `org_email_config_redacted` view. Verified 8/8. |
 | [`20260513130000_org_sms_config_and_dlt.sql`](../supabase/migrations/20260513130000_org_sms_config_and_dlt.sql) | D-435 | 2026-05-13 ✓ | `org_sms_config` (provider CHECK ∈ {msg91, gupshup}, encrypted_credentials, sender_id, dlt_entity_id, is_active, test_ping_*) + `dlt_templates` (composite PK organization_id+template_id, content, category CHECK ∈ {promotional, transactional, service}, registered_at) both RLS org-scoped. Verified 11/11. |
 | [`20260513140000_org_whatsapp_endpoints_extend.sql`](../supabase/migrations/20260513140000_org_whatsapp_endpoints_extend.sql) | D-432 | 2026-05-13 ✓ | EXTEND `org_whatsapp_endpoints` (D-010) with provider CHECK ∈ {gupshup, cloud_api} (nullable for V0 backward compat), encrypted_credentials, approved_template_ids text[] DEFAULT '{}', from_phone_number_id, from_display_number, test_ping_*. New `org_whatsapp_endpoints_redacted` view exposing is_configured + approved_templates_count. Verified 9/9. |
+| [`20260513150000_org_sister_product_tokens.sql`](../supabase/migrations/20260513150000_org_sister_product_tokens.sql) | D-440 | 2026-05-13 ✓ | `org_sister_product_tokens` (id PK, organization_id FK ON DELETE CASCADE, product_kind CHECK ∈ {post_sales_crm, lead_sources, legal_auditor}, token_hash UNIQUE, last4, created_at/by, last_used_at, revoked_at/by). Partial index on token_hash WHERE revoked_at IS NULL (hot verify path). Secondary index on (organization_id, product_kind). RLS: super_admin-only SELECT via app_is_super_admin(); INSERT/UPDATE/DELETE denied. Verified 7/7. |
 
 ---
 
