@@ -15,28 +15,54 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+type Visibility = "all" | "admin";
+
 type NavItem = {
   href: string;
   Icon: LucideIcon;
   label: string;
+  visibility: Visibility;
 };
 
 const PRIMARY_NAV: NavItem[] = [
-  { href: "/dashboard", Icon: Sparkles, label: "Command Center" },
-  { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts" },
-  { href: "/admin/inventory", Icon: Building2, label: "Inventory" },
-  { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls" },
-  { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications" },
-  { href: "/admin/views", Icon: Layers, label: "Pipelines & Views" },
-  { href: "/admin/system-health", Icon: Activity, label: "System Health" },
+  { href: "/dashboard", Icon: Sparkles, label: "Command Center", visibility: "all" },
+  { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts", visibility: "all" },
+  { href: "/admin/inventory", Icon: Building2, label: "Inventory", visibility: "admin" },
+  { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls", visibility: "all" },
+  { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications", visibility: "all" },
+  { href: "/admin/views", Icon: Layers, label: "Pipelines & Views", visibility: "admin" },
+  { href: "/admin/system-health", Icon: Activity, label: "System Health", visibility: "admin" },
 ];
 
 const FOOTER_NAV: NavItem[] = [
-  { href: "/dashboard/settings", Icon: Settings, label: "Settings" },
+  { href: "/dashboard/settings", Icon: Settings, label: "Settings", visibility: "all" },
 ];
 
-export function CommandCenterSidebar() {
+// Roles that route-policy.ts allows onto /admin/* + /settings/*. Anyone
+// else gets silently redirected to /dashboard by middleware, so we hide
+// admin-only icons for them to avoid dead clicks.
+const ADMIN_ROLES = new Set([
+  "super_admin",
+  "org_owner",
+  "org_admin",
+]);
+
+type Props = {
+  /** Pass `user.profile.base_role` from the dashboard layout. `null` /
+   *  undefined → treat as non-admin. */
+  baseRole?: string | null;
+};
+
+export function CommandCenterSidebar({ baseRole }: Props) {
   const pathname = usePathname();
+  const isAdmin = baseRole ? ADMIN_ROLES.has(baseRole) : false;
+  const primaryItems = PRIMARY_NAV.filter(
+    (item) => item.visibility === "all" || isAdmin,
+  );
+  const footerItems = FOOTER_NAV.filter(
+    (item) => item.visibility === "all" || isAdmin,
+  );
+
   return (
     <aside
       aria-label="Primary navigation"
@@ -50,12 +76,12 @@ export function CommandCenterSidebar() {
         Bx
       </Link>
       <nav className="mt-8 flex flex-1 flex-col gap-3">
-        {PRIMARY_NAV.map((item) => (
+        {primaryItems.map((item) => (
           <SidebarLink key={item.href} item={item} active={isActive(pathname, item.href)} />
         ))}
       </nav>
       <div className="flex flex-col gap-3">
-        {FOOTER_NAV.map((item) => (
+        {footerItems.map((item) => (
           <SidebarLink key={item.href} item={item} active={isActive(pathname, item.href)} />
         ))}
       </div>

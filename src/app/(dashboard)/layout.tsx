@@ -27,7 +27,7 @@ export default async function DashboardLayout({
     <NewLeadDialogProvider>
       <div className="dark min-h-screen cc-bg-canvas text-foreground">
         <div className="flex min-h-screen">
-          <CommandCenterSidebar />
+          <CommandCenterSidebar baseRole={user?.profile?.base_role ?? null} />
           <div className="flex min-h-screen flex-1 flex-col min-w-0">
             <CommandCenterTopbar
               displayName={user?.profile?.display_name ?? null}
