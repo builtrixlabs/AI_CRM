@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Bell, ChevronDown } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Bell, ChevronDown, LogOut } from "lucide-react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = {
   displayName: string | null;
@@ -37,6 +38,7 @@ export function CommandCenterTopbar({ displayName }: Props) {
             style={{ background: "var(--cc-amber-500)" }}
           />
         </button>
+        <SignOutIconButton />
         <AvatarChip displayName={displayName} />
       </div>
     </header>
@@ -56,6 +58,43 @@ function WorkspaceSwitcher() {
       <span className="cc-eyebrow cc-eyebrow-soft">Workspace</span>
       <span className="font-medium">Casagrand · Chennai South</span>
       <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+    </button>
+  );
+}
+
+/**
+ * Sign-out button rendered as an icon in the topbar. Restores the logout
+ * affordance D-500 dropped when CommandCenterTopbar replaced the prior
+ * <UserMenu>. Mirrors src/components/auth/sign-out-button.tsx behaviour:
+ *   - browser-side supabase.auth.signOut() clears the @supabase/ssr cookie
+ *   - then window.location.href hard-navigates so the middleware
+ *     re-evaluates with no session and renders /auth/sign-in.
+ */
+function SignOutIconButton() {
+  const [pending, startTransition] = useTransition();
+  function handleClick() {
+    startTransition(async () => {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.signOut();
+      } catch {
+        // best-effort — the hard-nav below clears the SSR cookie round-trip.
+      } finally {
+        window.location.href = "/auth/sign-in";
+      }
+    });
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={pending}
+      aria-label="Sign out"
+      title="Sign out"
+      data-testid="topbar-sign-out"
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] disabled:opacity-60"
+    >
+      <LogOut className="h-4 w-4" />
     </button>
   );
 }

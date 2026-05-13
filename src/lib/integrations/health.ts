@@ -355,49 +355,57 @@ export async function getIntegrationsHealth(
 ): Promise<ChannelHealth[]> {
   const supabase = await createSupabaseServerClient();
 
-  // Telephony (D-433) — redacted view, RLS-scoped to caller's org.
-  const { data: telephony } = await supabase
-    .from("org_telephony_config_redacted")
-    .select(
-      "is_configured, is_active, test_ping_at, test_ping_ok, test_ping_message",
-    )
-    .eq("organization_id", orgId)
-    .maybeSingle();
-
-  // Email (D-434) — redacted view.
-  const { data: email } = await supabase
-    .from("org_email_config_redacted")
-    .select(
-      "is_configured, is_active, from_email, verified_at, test_ping_at, test_ping_ok, test_ping_message",
-    )
-    .eq("organization_id", orgId)
-    .maybeSingle();
-
-  // SMS (D-435) — redacted view.
-  const { data: sms } = await supabase
-    .from("org_sms_config_redacted")
-    .select(
-      "is_configured, is_active, sender_id, dlt_entity_id, test_ping_at, test_ping_ok, test_ping_message",
-    )
-    .eq("organization_id", orgId)
-    .maybeSingle();
-
-  // WhatsApp (D-432) — redacted endpoint view.
-  const { data: whatsapp } = await supabase
-    .from("org_whatsapp_endpoints_redacted")
-    .select(
-      "is_configured, is_active, provider, from_phone_number_id, from_display_number, approved_templates_count, test_ping_at, test_ping_ok, test_ping_message",
-    )
-    .eq("organization_id", orgId)
-    .maybeSingle();
-
-  // Voice IQ (D-132) — redacted secret view.
-  const { data: voiceIq } = await supabase
-    .from("org_integration_secrets_redacted")
-    .select("rotated_at")
-    .eq("organization_id", orgId)
-    .eq("kind", "voice_iq_inbox_secret")
-    .maybeSingle();
+  // Perf — all 5 channels resolve in parallel. Sequential awaits stacked
+  // 5 round-trips of network latency per /admin/integrations render
+  // (~400-600ms on a warm pool, 2-3s cold). Promise.all collapses to
+  // one round-trip's worth.
+  const [
+    { data: telephony },
+    { data: email },
+    { data: sms },
+    { data: whatsapp },
+    { data: voiceIq },
+  ] = await Promise.all([
+    // Telephony (D-433)
+    supabase
+      .from("org_telephony_config_redacted")
+      .select(
+        "is_configured, is_active, test_ping_at, test_ping_ok, test_ping_message",
+      )
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    // Email (D-434)
+    supabase
+      .from("org_email_config_redacted")
+      .select(
+        "is_configured, is_active, from_email, verified_at, test_ping_at, test_ping_ok, test_ping_message",
+      )
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    // SMS (D-435)
+    supabase
+      .from("org_sms_config_redacted")
+      .select(
+        "is_configured, is_active, sender_id, dlt_entity_id, test_ping_at, test_ping_ok, test_ping_message",
+      )
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    // WhatsApp (D-432)
+    supabase
+      .from("org_whatsapp_endpoints_redacted")
+      .select(
+        "is_configured, is_active, provider, from_phone_number_id, from_display_number, approved_templates_count, test_ping_at, test_ping_ok, test_ping_message",
+      )
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    // Voice IQ (D-132)
+    supabase
+      .from("org_integration_secrets_redacted")
+      .select("rotated_at")
+      .eq("organization_id", orgId)
+      .eq("kind", "voice_iq_inbox_secret")
+      .maybeSingle(),
+  ]);
 
   return [
     buildTelephonyHealth(telephony as TelephonyRedacted),
