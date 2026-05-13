@@ -11,6 +11,9 @@ export const envelopeSchema = z
       "mih",
       "platform",
       "voice_iq",
+      // D-443 — sister-product inbound events
+      "post_sales_crm",
+      "lead_sources",
     ]),
     ts: z.string().datetime(),
     payload: z.record(z.string(), z.unknown()),
@@ -167,6 +170,59 @@ export const callObjectionPayloadSchema = z.object({
 });
 
 export type CallObjectionPayload = z.infer<typeof callObjectionPayloadSchema>;
+
+// ── D-443 sister-product inbound payloads ───────────────────────────────────
+
+export const postSalesMilestoneUpdatedPayloadSchema = z
+  .object({
+    deal_id: z.string().uuid(),
+    milestone_slug: z.string().min(1),
+    milestone_status: z.enum(["pending", "completed", "skipped"]),
+    completed_at: z.string().datetime().optional(),
+    note: z.string().optional(),
+  })
+  .strict();
+export type PostSalesMilestoneUpdatedPayload = z.infer<
+  typeof postSalesMilestoneUpdatedPayloadSchema
+>;
+
+export const postSalesDemandLetterSentPayloadSchema = z
+  .object({
+    deal_id: z.string().uuid(),
+    demand_letter_id: z.string().uuid(),
+    sent_at: z.string().datetime(),
+    amount_inr: z.number().nonnegative(),
+    delivery_channel: z.enum(["email", "whatsapp", "sms", "postal"]),
+  })
+  .strict();
+export type PostSalesDemandLetterSentPayload = z.infer<
+  typeof postSalesDemandLetterSentPayloadSchema
+>;
+
+export const postSalesHandoverCompletedPayloadSchema = z
+  .object({
+    deal_id: z.string().uuid(),
+    unit_id: z.string().uuid(),
+    handover_at: z.string().datetime(),
+    handed_over_by: z.string().uuid().optional(),
+  })
+  .strict();
+export type PostSalesHandoverCompletedPayload = z.infer<
+  typeof postSalesHandoverCompletedPayloadSchema
+>;
+
+export const leadIngestedPayloadSchema = z
+  .object({
+    external_id: z.string().min(1),
+    source: z.string().min(1),
+    name: z.string().optional(),
+    phone_e164: z.string().optional(),
+    email: z.string().email().optional(),
+    captured_at: z.string().datetime(),
+    raw: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+export type LeadIngestedPayload = z.infer<typeof leadIngestedPayloadSchema>;
 
 export type InboxResult =
   | {
