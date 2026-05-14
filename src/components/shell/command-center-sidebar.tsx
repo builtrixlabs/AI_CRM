@@ -14,33 +14,61 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type Visibility = "all" | "admin";
+import type { Permission } from "@/lib/auth/rbac";
 
 type NavItem = {
   href: string;
   Icon: LucideIcon;
   label: string;
-  visibility: Visibility;
+  /**
+   * Permission required to USE the destination. The sidebar hides items
+   * the caller doesn't hold so we never show a button that silently
+   * fails (the previous binary admin/non-admin filter leaked
+   * /dashboard/leads to channel-partner roles that don't have
+   * `leads:view`, and ignored org-level deny-overrides).
+   *
+   * Omit for items every authenticated dashboard user can reach
+   * (Command Center home + Settings).
+   */
+  requires?: Permission;
+  /**
+   * True when the destination is under `/admin/*` or `/platform/*`. The
+   * route-policy.ts middleware bounces non-admin users back to /dashboard
+   * on these paths, so we additionally require the caller's base_role to
+   * be in ADMIN_ROLES. Without this, a user who somehow holds the precise
+   * permission but isn't in an admin role still hits a silent redirect.
+   */
+  adminSurface?: boolean;
 };
 
 const PRIMARY_NAV: NavItem[] = [
-  { href: "/dashboard", Icon: Sparkles, label: "Command Center", visibility: "all" },
-  { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts", visibility: "all" },
-  { href: "/admin/inventory", Icon: Building2, label: "Inventory", visibility: "admin" },
-  { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls", visibility: "all" },
-  { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications", visibility: "all" },
-  { href: "/admin/views", Icon: Layers, label: "Pipelines & Views", visibility: "admin" },
-  { href: "/admin/system-health", Icon: Activity, label: "System Health", visibility: "admin" },
+  // Always visible — every authenticated dashboard user.
+  { href: "/dashboard", Icon: Sparkles, label: "Command Center" },
+  // Leads / contacts / deals — operational read tier. Held by sales_rep,
+  // manager, workspace_admin, read_only, org_admin/owner. NOT held by
+  // channel_partner (cp:* only) or service_account (empty perm set).
+  { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts", requires: "leads:view" },
+  // Inventory admin — under /admin/*, requires `catalog:admin_override`
+  // which only org_admin/owner + super_admin hold.
+  { href: "/admin/inventory", Icon: Building2, label: "Inventory", requires: "catalog:admin_override", adminSurface: true },
+  { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls", requires: "deals:view" },
+  { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications", requires: "contacts:view" },
+  // Pipeline / view customisation — under /admin/*, `views:customize`.
+  { href: "/admin/views", Icon: Layers, label: "Pipelines & Views", requires: "views:customize", adminSurface: true },
+  // System health — under /admin/*, admin-surface only. No specific
+  // permission gate because route-policy already restricts the surface
+  // and the page is org-level monitoring, not a per-perm feature.
+  { href: "/admin/system-health", Icon: Activity, label: "System Health", adminSurface: true },
 ];
 
 const FOOTER_NAV: NavItem[] = [
-  { href: "/dashboard/settings", Icon: Settings, label: "Settings", visibility: "all" },
+  // Settings is reachable for every authenticated user.
+  { href: "/dashboard/settings", Icon: Settings, label: "Settings" },
 ];
 
-// Roles that route-policy.ts allows onto /admin/* + /settings/*. Anyone
-// else gets silently redirected to /dashboard by middleware, so we hide
-// admin-only icons for them to avoid dead clicks.
+// Roles that route-policy.ts allows onto /admin/* + /platform/*. Anyone
+// else (manager, sales_rep, read_only, channel_partner, service_account)
+// is silently redirected to /dashboard at the middleware layer.
 const ADMIN_ROLES = new Set([
   "super_admin",
   "org_owner",
@@ -48,19 +76,38 @@ const ADMIN_ROLES = new Set([
 ]);
 
 type Props = {
-  /** Pass `user.profile.base_role` from the dashboard layout. `null` /
-   *  undefined → treat as non-admin. */
+  /** `user.profile.base_role` from the dashboard layout. Used to gate
+   *  admin-surface items (the middleware-level surface gate). */
   baseRole?: string | null;
+  /**
+   * Effective permission strings for the caller, computed via
+   * `Array.from(resolveForUser(user))` in the layout (the Cmd+K palette
+   * already does this). Passed as `readonly string[]` so server →
+   * client serialisation is trivially safe; the sidebar materialises a
+   * Set internally for O(1) lookups.
+   */
+  permissions?: readonly string[];
 };
 
-export function CommandCenterSidebar({ baseRole }: Props) {
+function isVisible(
+  item: NavItem,
+  isAdmin: boolean,
+  perms: ReadonlySet<string>,
+): boolean {
+  if (item.adminSurface && !isAdmin) return false;
+  if (item.requires && !perms.has(item.requires)) return false;
+  return true;
+}
+
+export function CommandCenterSidebar({ baseRole, permissions }: Props) {
   const pathname = usePathname();
   const isAdmin = baseRole ? ADMIN_ROLES.has(baseRole) : false;
-  const primaryItems = PRIMARY_NAV.filter(
-    (item) => item.visibility === "all" || isAdmin,
+  const perms = new Set<string>(permissions ?? []);
+  const primaryItems = PRIMARY_NAV.filter((item) =>
+    isVisible(item, isAdmin, perms),
   );
-  const footerItems = FOOTER_NAV.filter(
-    (item) => item.visibility === "all" || isAdmin,
+  const footerItems = FOOTER_NAV.filter((item) =>
+    isVisible(item, isAdmin, perms),
   );
 
   return (
