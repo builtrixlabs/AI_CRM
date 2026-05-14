@@ -26,7 +26,6 @@ const PERMISSION_GROUPS: Array<{ label: string; prefix: string[] }> = [
   { label: "Leads", prefix: ["leads:"] },
   { label: "Deals", prefix: ["deals:"] },
   { label: "Contacts", prefix: ["contacts:"] },
-  { label: "Properties / units", prefix: ["properties:", "units:"] },
   { label: "Activities / calls / campaigns", prefix: ["activities:", "calls:", "campaigns:"] },
   { label: "Site visits", prefix: ["site_visits:"] },
   { label: "Documents / notes", prefix: ["documents:", "notes:"] },

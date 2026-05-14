@@ -75,28 +75,6 @@ export const PERMISSIONS = [
   "contacts:edit",
   "contacts:merge",
 
-  // ── Properties / units ──────────────────────────────────────────────────
-  "properties:view",
-  "properties:create",
-  "properties:edit",
-  "properties:hold",
-  "properties:release",
-  "units:view",
-  "units:create",
-  "units:edit",
-  "catalog:admin_override",
-
-  // ── Inventory state transitions (D-420) ─────────────────────────────────
-  // One perm per forward unit-state edge so admin UIs can filter the
-  // transition action dropdown to the perms the caller holds. Backward and
-  // non-adjacent transitions continue to require `catalog:admin_override`.
-  "inventory:hold",
-  "inventory:block",
-  "inventory:book",
-  "inventory:sell",
-  "inventory:register",
-  "inventory:possess",
-
   // ── Activities / calls / campaigns ──────────────────────────────────────
   "activities:view",
   "activities:create",
@@ -158,8 +136,6 @@ const READ_ONLY_OPERATIONAL: Permission[] = [
   "leads:view",
   "deals:view",
   "contacts:view",
-  "properties:view",
-  "units:view",
   "activities:view",
   "calls:view",
   "campaigns:view",
@@ -184,9 +160,6 @@ const SALES_REP_OPERATIONAL: Permission[] = [
   "notes:create",
   "notes:edit",
   "documents:upload",
-  // D-420 — reps can soft-hold inventory; everything else requires
-  // a manager or workspace_admin role.
-  "inventory:hold",
 ];
 
 const MANAGER_OPERATIONAL: Permission[] = [
@@ -199,8 +172,6 @@ const MANAGER_OPERATIONAL: Permission[] = [
   "calls:listen",
   "calls:export",
   "audit:view",
-  // D-420 — manager can escalate a hold to a confirmed block.
-  "inventory:block",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -211,22 +182,11 @@ const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
   "templates:approve_outbound",
   "documents:verify",
   "documents:sign",
-  // Catalog / bulk operations land at workspace_admin tier
+  // Bulk operations land at workspace_admin tier
   "leads:delete",
   "leads:bulk_import",
-  "properties:create",
-  "properties:edit",
-  "properties:hold",
-  "properties:release",
-  "units:create",
-  "units:edit",
   "campaigns:create",
   "campaigns:execute",
-  // D-420 — workspace_admin can drive the full post-booking lifecycle.
-  "inventory:book",
-  "inventory:sell",
-  "inventory:register",
-  "inventory:possess",
 ];
 
 const ORG_ADMIN_PLANE: Permission[] = [
@@ -256,14 +216,6 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
-  "catalog:admin_override",
-  // D-420 — org_admin / org_owner hold every inventory perm.
-  "inventory:hold",
-  "inventory:block",
-  "inventory:book",
-  "inventory:sell",
-  "inventory:register",
-  "inventory:possess",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [

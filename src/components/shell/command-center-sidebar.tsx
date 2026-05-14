@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   Sparkles,
   Users,
-  Building2,
   Phone,
   MessageSquare,
   Layers,
@@ -48,9 +47,6 @@ const PRIMARY_NAV: NavItem[] = [
   // manager, workspace_admin, read_only, org_admin/owner. NOT held by
   // channel_partner (cp:* only) or service_account (empty perm set).
   { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts", requires: "leads:view" },
-  // Inventory admin — under /admin/*, requires `catalog:admin_override`
-  // which only org_admin/owner + super_admin hold.
-  { href: "/admin/inventory", Icon: Building2, label: "Inventory", requires: "catalog:admin_override", adminSurface: true },
   { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls", requires: "deals:view" },
   { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications", requires: "contacts:view" },
   // Pipeline / view customisation — under /admin/*, `views:customize`.
