@@ -454,11 +454,52 @@ describe("dispatchApprovedDraft — sms", () => {
   });
 });
 
-describe("dispatchApprovedDraft — whatsapp deferred", () => {
-  it("returns not_configured cleanly + writes deferred audit", async () => {
+describe("dispatchApprovedDraft — whatsapp", () => {
+  it("happy path: resolves adapter + templated send, approved → sent", async () => {
     const m = makeClient({
       queue: row({ channel: "whatsapp" }),
-      lead: lead(),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && !("already_sent" in r)) {
+      expect(r.status).toBe("sent");
+      expect(r.provider).toBe("mock");
+      expect(r.provider_message_id).toMatch(/^mock-wa-/);
+    }
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeTruthy();
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "nodes" &&
+          (i.payload as Record<string, unknown>).node_type === "activity",
+      ),
+    ).toBeTruthy();
+    expect(m.inserts.find((i) => i.table === "edges")).toBeTruthy();
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action === "agent_draft_sent",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("no whatsapp config → not_configured + deferred audit, row stays approved", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      // no whatsappConfig
     });
     const r = await dispatchApprovedDraft(
       { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
@@ -477,12 +518,81 @@ describe("dispatchApprovedDraft — whatsapp deferred", () => {
             "agent_draft_send_deferred",
       ),
     ).toBeTruthy();
-    // No status update — row stays approved
     expect(
       m.updates.find(
         (u) =>
           u.table === "agent_approval_queue" &&
           (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("inactive whatsapp endpoint (active=false) → not_configured + deferred", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig({ active: false }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("not_configured");
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("missing phone on lead → missing_recipient", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: undefined, email: "x@y.com" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("missing_recipient");
+  });
+
+  it("follow-up template not approved → template_not_found routes to deferred", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig({ approved_template_ids: [] }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("not_configured");
+      expect(r.message).toBe("whatsapp");
+    }
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+    // template_not_found is a setup gap, not a send failure — no send_error
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          typeof (u.payload as Record<string, unknown>).send_error ===
+            "string",
       ),
     ).toBeUndefined();
   });
