@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { dispatchApprovedDraft } from "@/lib/agents/follow-up/dispatch";
+import { confirmSiteVisitBooking } from "@/lib/agents/site-visit-agent";
 
 export type QueueActionResult =
   | { ok: true; dispatch?: "sent" }
@@ -187,4 +188,55 @@ export async function rejectQueueItemAction(
 
   revalidatePath("/admin/agents/queue");
   return { ok: true };
+}
+
+export type SiteVisitBookingActionResult =
+  | { ok: true; dispatch: "sent" | "deferred"; assigned: boolean }
+  | {
+      ok: false;
+      error: "permission" | "not_found" | "validation" | "internal";
+      message?: string;
+    };
+
+/**
+ * D-601 — finalize a `site_visit_booking` queue row from the cab form.
+ * Gated `agents:view_activity` (the sibling queue-action gate); all the
+ * booking logic — write cab fields, transition draft→scheduled, auto-assign
+ * the project rep, dispatch the WhatsApp confirmation — is in
+ * `confirmSiteVisitBooking`.
+ */
+export async function submitSiteVisitBookingAction(
+  queue_id: string,
+  cab: unknown,
+): Promise<SiteVisitBookingActionResult> {
+  const user = await gate();
+  if (!user || !user.org_id) return { ok: false, error: "permission" };
+
+  const result = await confirmSiteVisitBooking({
+    organization_id: user.org_id,
+    actor_id: user.user.id,
+    queue_id,
+    cab,
+  });
+
+  if (!result.ok) {
+    const error: "not_found" | "validation" | "internal" =
+      result.reason === "queue_not_found" ||
+      result.reason === "visit_not_found"
+        ? "not_found"
+        : result.reason === "validation" ||
+            result.reason === "wrong_kind" ||
+            result.reason === "not_pending" ||
+            result.reason === "no_ref_node"
+          ? "validation"
+          : "internal";
+    return { ok: false, error, message: result.message ?? result.reason };
+  }
+
+  revalidatePath("/admin/agents/queue");
+  return {
+    ok: true,
+    dispatch: result.dispatch,
+    assigned: result.assigned_sales_rep_id !== null,
+  };
 }

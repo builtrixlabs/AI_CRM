@@ -7,6 +7,7 @@ import {
   approveQueueItemAction,
   rejectQueueItemAction,
 } from "./actions";
+import { SiteVisitBookingCard } from "@/components/agents/site-visit-booking-card";
 
 /** D-600 — a brochure ref carried on a brochure_send queue row. */
 export type QueueAttachment = {
@@ -35,6 +36,22 @@ type DoneState =
   | { kind: "rejected" };
 
 export function QueueItem({ item }: { item: QueueItemRow }) {
+  // D-601 — site_visit_booking rows render a cab-details action card
+  // instead of the standard draft-text textarea. Dispatcher holds no
+  // hooks, so the branch is rules-of-hooks-safe.
+  if (item.agent_kind === "site_visit_booking") {
+    return (
+      <SiteVisitBookingCard
+        queueId={item.id}
+        leadId={item.lead_id}
+        leadLabel={item.lead_label}
+      />
+    );
+  }
+  return <StandardQueueItem item={item} />;
+}
+
+function StandardQueueItem({ item }: { item: QueueItemRow }) {
   const [body, setBody] = useState(item.draft_body);
   const [reason, setReason] = useState("");
   const [pending, startTransition] = useTransition();

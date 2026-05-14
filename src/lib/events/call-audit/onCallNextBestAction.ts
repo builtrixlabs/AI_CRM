@@ -3,6 +3,7 @@ import { updateNodeData } from "@/lib/nodes/api";
 import { dispatchDirective } from "@/lib/doe/runtime";
 import { inngest } from "@/lib/inngest/client";
 import { isBrochureAction } from "@/lib/agents/brochure-agent";
+import { isSiteVisitBookingAction } from "@/lib/agents/site-visit-agent";
 import {
   callNextBestActionPayloadSchema,
   type BuiltrixEvent,
@@ -104,6 +105,28 @@ export async function onCallNextBestAction(
     } catch (err) {
       console.warn(
         "[onCallNextBestAction] brochure agent emit failed",
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  // D-601 — when the next-best-action asks to book a site visit, fan out
+  // to the Site Visit Booking Agent via Inngest. Best-effort, same as the
+  // brochure emit (best-effort-event-emit).
+  if (isSiteVisitBookingAction(payload.nba.action)) {
+    try {
+      await inngest.send({
+        name: "agent/site_visit.requested",
+        data: {
+          organization_id: envelope.organization_id,
+          lead_id: payload.lead_id,
+          nba_action: payload.nba.action,
+          call_id: payload.call_id ?? null,
+        },
+      });
+    } catch (err) {
+      console.warn(
+        "[onCallNextBestAction] site visit agent emit failed",
         err instanceof Error ? err.message : String(err)
       );
     }
