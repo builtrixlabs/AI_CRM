@@ -42,16 +42,29 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 | ID | Directive | Status | Depends on |
 |---|---|---|---|
 | D-603 | Wire integration adapters into agent dispatch (THE BIG ONE) | **shipped** `#83` | D-432, D-433, D-434, D-435, D-439 |
-| D-604 | Marketing Intelligence Hub (MIH) inbound API — `/api/sister/v1/leads` | planned | D-440, D-443, baseline 122 |
-| D-610 | Pre-sales Auto-Allocation Engine | planned | D-007, D-018, teams (D-001) |
-| D-608 | Project ↔ Sales-Person Mapping | planned | D-018 |
-| D-602 | Site Visit Module — list, detail, coordinator role, status workflow | planned | D-012, D-222 |
-| D-605 | Command Center home — real data | planned | D-009, D-410, realtime publication |
-| D-617 | Cmd+K shortcut completion | planned | D-008 |
+| D-604 | Marketing Intelligence Hub (MIH) inbound API — `/api/sister/v1/leads` | **built** | D-440, D-443, baseline 122 |
+| D-610 | Pre-sales Auto-Allocation Engine | **built** | D-007, D-018, teams (D-001) |
+| D-608 | Project ↔ Sales-Person Mapping | **built** | D-018 |
+| D-602 | Site Visit Module — list, detail, coordinator role, status workflow | **built** | D-012, D-222 |
+| D-605 | Command Center home — real data | **built** | D-009, D-410, realtime publication |
+| D-617 | Cmd+K shortcut completion | **built** | D-008 |
 
 **Gate 1:** Real outbound message leaves the system; MIH POST → lead created → auto-allocated → on rep dashboard within 5s; Site Visit tab loads with filtering; Command Center shows real org-scoped KPIs.
 
 **D-603 shipped 2026-05-14** — PR [#83](https://github.com/builtrixlabs/AI_CRM/pull/83), squash `5606620` → `v6-phase-1`. `pickProvider() → "mock"` replaced with `resolveOrgAdapter`; email + sms + whatsapp follow-up dispatch resolve the real per-org adapter; no config → deferred (the "configure your <channel> integration" queue card). **No migration — Gate 4 (migrations) = N/A.** +39 unit + 1 cross-tenant integration test (1743 → 1782 green); `tsc` clean on changed files; security scan clean; `v6-phase-1` post-merge build green (`ai-2v6y2t3qn`). The deployed `/admin/agents/queue` route was verified rendering for an authenticated org_admin via `scripts/demo/verify-d603-queue.ts`; the interactive click-through smoke and per-org live-credential testing are deferred per operator (2026-05-14) — the latter needs `INTEGRATION_ENCRYPTION_KEY` on the preview env.
+
+**D-602, D-604, D-605, D-608, D-610, D-617 built 2026-05-14** — the remaining six Phase-1 directives, built end-to-end in one operator-authorized run on `claude/lucid-tu-6c9e0d` (cut from `v6-phase-1`). Per-directive directive files are in `directives/602…617-*.md`. State: **built + tested + typechecked + migrations applied & verified on Supabase** for all six; the branch is pushed to `origin`. Remaining gates (Vercel preview, live UI verification, PR review/merge to `v6-phase-1`, post-merge build) are operator-side once the branch is reviewed.
+
+- **D-602** Site Visit Module — site visits stay `nodes` rows (no `site_visits` table — PRD shorthand reconciled); **7-state workflow** amends `baseline/110` §III (`draft→scheduled→confirmed→in_progress→completed→cancelled→no_show`); `site_visit_coordinator_claims` table (atomic per-(org,day) claim) + the four V6 `base_role` enum values land here. List + detail pages, coordinator banner, status control. Migrations `20260514130000_v6_role_extensions.sql` + `20260514130100_site_visit_v6.sql` applied, `verify_602.mjs` 11/11 PASS. **Operator follow-up: `baseline/110` §III doc edit is hook-blocked — operator-owned.**
+- **D-604** MIH inbound API — `POST /api/sister/v1/leads` implements `docs/baselines/122-mih-inbound-contract.md` verbatim (3-layer auth, Zod body, dedup by `external_id` then phone, 100/sec fail-open rate limit, idempotency). `nodes.source_external_id` + `nodes.source_payload` + `mih_inbound_log` table. Migration `20260514140000_mih_lead_inbound.sql` applied, `verify_604.mjs` 8/8 PASS. **Operator follow-up: tick `docs/baselines/122` §11 sign-off boxes.**
+- **D-605** Command Center home — real data — all six `/dashboard` widgets rebuilt prop-driven, fed by `getCommandCenterData` (one role-scoped lead fetch, JS-aggregated KPIs/volume/states/hot-5); `PulseFeed` is a realtime client subscription; empty-state copy added. **No migration.**
+- **D-608** Project ↔ Sales-Person Mapping — `project_sales_assignments` (+ partial-unique "one primary per project" index) + `profiles.on_leave`; `resolveSalesRepForProject` lookup (primary → on-leave fallback → null) is the surface D-601 will call; `/admin/projects` + per-project sales-team UI. Migration `20260514150000_project_sales_mapping.sql` applied, `verify_608.mjs` 7/7 PASS.
+- **D-610** Pre-sales Auto-Allocation Engine — `lead_allocation_rules` + `lead_allocation_state` + `team_members` tables; `allocateLead` engine (rule match → user/round-robin/first-available target → raw lead-node update + audit); `presalesAllocationOnLeadCreated` Inngest function subscribes to `lead.created` with per-org concurrency=1 for race-free round-robin; `/admin/allocation-rules` UI (teams + members + rules). Migration `20260514160000_presales_allocation.sql` applied, `verify_610.mjs` 11/11 PASS.
+- **D-617** Cmd+K shortcut completion — all 12 placeholder shortcuts resolved: 8 lead filters → `/dashboard/leads?canned=<slug>` (new `canned-views.ts` + `DashboardListPage` `adHocFilters` prop), site-visits → D-602's `?bucket=today`, open-deal/contact → real D-410 list pages, send-feedback → new `/dashboard/settings/feedback` form (persists to `audit_log`); the `placeholder` command kind + route + `account-keyboard-shortcuts` removed. **No migration.**
+
+**Phase-1 verification:** full `npx vitest run` → **1898/1898 green** (206 files; +116 over the 1782 D-603 baseline). `npx tsc --noEmit` → 0 errors in changed files (9 pre-existing `tests/e2e/` strict-null errors unrelated). Five new `scripts/verify_60*.mjs` checkers all PASS against live Supabase.
+
+> **Naming note:** D-602's directive lands the four V6 `base_role` values (`presales_rep`, `telemarketing_rep`, `customer_recovery_rep`, `site_visit_coordinator`) — implementation-order §6 attributed `role_extensions.sql` to "D-003 ext", but D-602 is the first Phase-1 directive that needs a new role and D-610 needs `presales_rep`, so the four were bundled into D-602's `20260514130000_v6_role_extensions.sql`.
 
 ## 3. Phase 2 — AI-native behaviors
 
@@ -147,11 +160,20 @@ v5 baseline entering v6:    ~1675 unit tests (full vitest run as of v5@a6e5f44)
 v6 Phase 0 (shipped):       1743 tests / 186 files green — catalog + inventory +
                             booking-pipeline + post-sales suites removed;
                             sidebar / token / directives suites realigned
-v6 Phase 1:                 ~ +120 unit + 4 integration + 2 E2E (target)
-                            D-603 shipped: +39 unit + 1 integration
+v6 Phase 1 (D-603):         1782 tests / 189 files green (+39 unit + 1 integration)
+v6 Phase 1 (D-602/604/605/  1898 tests / 206 files green (+116 over the D-603
+  608/610/617 built):       baseline). New default-run suites: sitevisits
+                            (list/coordinator/detail + 7-state), mih (schema/
+                            ingest) + sister/v1/leads route, command-center/data
+                            + 6 widget suites, projects/sales-mapping, leads/
+                            allocation-engine + inngest/presales-allocation,
+                            leads/canned-views, feedback-form, allocation-manager.
+                            New integration suites (excluded from default run):
+                            site-visit-coordinator-claims, mih-inbound,
+                            project-sales-mapping, mih-to-presales.
 v6 Phase 2:                 ~ +150 unit + 6 integration + 4 E2E (target)
 v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 1782 unit tests / 189 files green (Phase 0 + D-603)
+v6 current:                 1898 unit tests / 206 files green (Phase 0 + all Phase 1)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.
@@ -161,6 +183,7 @@ New test suites required (implementation-order §7): `brochure-agent`, `site-vis
 ## 10. Sign-off checklist for V6.0 launch (implementation-order §11)
 
 - [x] Phase 0 stabilization merged to `v6` (2026-05-14) — 10 steps + test alignment; Gate 0 build / tsc / vitest / grep all green. Migration apply + demo-seed run pending (DB-side, see §1).
+- [~] Phase 1 — all 7 directives built (D-603 shipped `#83`; D-602/604/605/608/610/617 built 2026-05-14, branch `claude/lucid-tu-6c9e0d` pushed). 1898/1898 vitest green, tsc clean, 4 migrations applied + verified on Supabase. **Remaining for Gate 1 acceptance:** Vercel preview build, live UI verification, PR review/merge to `v6-phase-1`, post-merge build — operator-side once the branch is reviewed.
 - [ ] Phase 1 Gate 1 acceptance complete (~Week 3)
 - [ ] Phase 2 Gate 2 acceptance complete (~Week 6)
 - [ ] Phase 3 Gate 3 acceptance complete (~Week 9)

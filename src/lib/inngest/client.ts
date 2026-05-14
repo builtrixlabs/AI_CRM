@@ -20,6 +20,8 @@ export type Events = {
       lead_id: string;
       organization_id: string;
       workspace_id: string;
+      /** D-604 — the connector name MIH reported (e.g. 'meta_lead_ads'). */
+      source?: string;
     };
   };
 };

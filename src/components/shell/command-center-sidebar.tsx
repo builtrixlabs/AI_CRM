@@ -7,6 +7,7 @@ import {
   Users,
   Phone,
   MessageSquare,
+  MapPin,
   Layers,
   Activity,
   Settings,
@@ -49,6 +50,9 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/dashboard/leads", Icon: Users, label: "Leads & Contacts", requires: "leads:view" },
   { href: "/dashboard/deals", Icon: Phone, label: "Deals & Calls", requires: "deals:view" },
   { href: "/dashboard/contacts", Icon: MessageSquare, label: "Communications", requires: "contacts:view" },
+  // Site Visits (D-602) — operational dashboard tier, gated on
+  // site_visits:view (held by every rep role + manager + org_admin).
+  { href: "/dashboard/site-visits", Icon: MapPin, label: "Site Visits", requires: "site_visits:view" },
   // Pipeline / view customisation — under /admin/*, `views:customize`.
   { href: "/admin/views", Icon: Layers, label: "Pipelines & Views", requires: "views:customize", adminSurface: true },
   // System health — under /admin/*, admin-surface only. No specific

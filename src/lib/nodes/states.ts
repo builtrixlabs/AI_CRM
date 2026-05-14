@@ -44,7 +44,18 @@ export const ALLOWED_STATES: Record<NodeType, readonly string[]> = {
     "registered",
     "possessed",
   ],
-  site_visit: ["scheduled", "confirmed", "completed", "no_show"],
+  // D-602 (V6 Phase 1) amends baseline/110 §III: the 4-state site_visit
+  // lifecycle becomes the 7-state PRD-v6.0 §D-602 workflow. Pre-V6 rows
+  // still validate — the prior states are a strict subset of the new set.
+  site_visit: [
+    "draft",
+    "scheduled",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+    "no_show",
+  ],
   call: [],
   activity: [],
   document: ["uploaded", "verified", "signed"],
@@ -56,7 +67,7 @@ const TERMINAL_STATES: Partial<Record<NodeType, readonly string[]>> = {
   deal: ["lost", "booked", "on_hold"],
   property: ["sold"],
   unit: ["possessed"],
-  site_visit: ["completed", "no_show"],
+  site_visit: ["completed", "cancelled", "no_show"],
   document: ["signed"],
 };
 

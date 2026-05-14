@@ -6,15 +6,28 @@ export { dominantState } from "./calendar-types";
 
 import type { CalendarDay, SiteVisitState } from "./calendar-types";
 
+// D-602 (V6 Phase 1) — 7-state site_visit lifecycle (baseline/110 §III
+// amendment). Derived order mirrors src/lib/nodes/states.ts.
 const STATES: SiteVisitState[] = [
+  "draft",
   "scheduled",
   "confirmed",
+  "in_progress",
   "completed",
+  "cancelled",
   "no_show",
 ];
 
 function emptyBuckets(): Record<SiteVisitState, number> {
-  return { scheduled: 0, confirmed: 0, completed: 0, no_show: 0 };
+  return {
+    draft: 0,
+    scheduled: 0,
+    confirmed: 0,
+    in_progress: 0,
+    completed: 0,
+    cancelled: 0,
+    no_show: 0,
+  };
 }
 
 /**
@@ -112,11 +125,7 @@ export async function getSiteVisitCalendar(
 
   return dayKeys.map((key) => {
     const by_state = buckets.get(key)!;
-    const total =
-      by_state.scheduled +
-      by_state.confirmed +
-      by_state.completed +
-      by_state.no_show;
+    const total = STATES.reduce((sum, s) => sum + by_state[s], 0);
     return {
       date: key,
       date_utc: new Date(`${key}T00:00:00Z`).toISOString(),
