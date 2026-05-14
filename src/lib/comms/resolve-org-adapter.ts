@@ -108,7 +108,9 @@ async function resolveVia<A>(
     .maybeSingle();
   if (error || !data) return NOT_CONFIGURED;
   try {
-    const { adapter, provider } = build(data as Record<string, unknown>);
+    const { adapter, provider } = build(
+      data as unknown as Record<string, unknown>,
+    );
     return { ok: true, adapter, provider };
   } catch (err) {
     return isNotConfigured(err) ? NOT_CONFIGURED : providerError(err);

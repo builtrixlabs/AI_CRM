@@ -47,13 +47,3 @@ export const FOLLOW_UP_DLT_TEMPLATE_IDS: ReadonlySet<string> = new Set(
 export function getDltTemplate(id: string): FollowUpDltTemplate | null {
   return FOLLOW_UP_DLT_TEMPLATES.find((t) => t.id === id) ?? null;
 }
-
-/**
- * Register every follow-up DLT template id with a MockSmsProvider so its
- * template-not-found check passes for the V1 default catalog.
- */
-export function registerFollowUpDltTemplates(provider: {
-  registerTemplate: (id: string) => void;
-}): void {
-  for (const t of FOLLOW_UP_DLT_TEMPLATES) provider.registerTemplate(t.id);
-}

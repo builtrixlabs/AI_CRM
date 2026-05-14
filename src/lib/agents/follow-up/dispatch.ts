@@ -6,12 +6,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { CommsError } from "@/lib/comms/types";
-import * as email from "@/lib/comms/email";
-import * as sms from "@/lib/comms/sms";
-import {
-  FOLLOW_UP_DLT_TEMPLATES,
-  registerFollowUpDltTemplates,
-} from "./dlt";
+import { resolveOrgAdapter } from "@/lib/comms/resolve-org-adapter";
+import { FOLLOW_UP_DLT_TEMPLATES, FOLLOW_UP_DLT_TEMPLATE_IDS } from "./dlt";
 
 export const FOLLOW_UP_SERVICE_ACCOUNT =
   "00000000-0000-4000-8000-000000000002";
@@ -42,13 +38,12 @@ export type DispatchResult =
       message?: string;
     };
 
-/**
- * Resolve the V1 provider id per channel. V1 hardcodes 'mock' — when an
- * org configures a live provider (future directive), this function reads
- * from agent_org_configs / integration_secrets.
- */
-function pickProvider(channel: "email" | "sms" | "whatsapp"): string {
-  return "mock";
+function errToMessage(err: unknown): string {
+  return err instanceof CommsError
+    ? `${err.kind}: ${err.message}`
+    : err instanceof Error
+      ? err.message
+      : "Unknown send error";
 }
 
 export async function dispatchApprovedDraft(
@@ -84,6 +79,47 @@ export async function dispatchApprovedDraft(
     return { ok: false, reason: "not_approved" };
   }
 
+  // Local helpers — close over client, args, row. `deferred` is the
+  // "org hasn't configured this channel" path: approval succeeded, send is
+  // deferred, row stays approved. `recordSendFailure` is the D-415 retry
+  // contract: stamp send_error, leave the row approved for re-approval.
+  const deferred = async (channel: string): Promise<DispatchResult> => {
+    await client.from("audit_log").insert({
+      actor_id: args.actor_id,
+      actor_type: "user",
+      actor_role: "org_admin",
+      organization_id: row.organization_id,
+      table_name: "agent_approval_queue",
+      record_id: row.id,
+      action: "agent_draft_send_deferred",
+      diff: { channel, reason: "not_configured" },
+    });
+    return { ok: false, reason: "not_configured", message: channel };
+  };
+
+  const recordSendFailure = async (
+    channel: string,
+    provider: string,
+    message: string,
+  ): Promise<DispatchResult> => {
+    await client
+      .from("agent_approval_queue")
+      .update({ send_error: message.slice(0, 500) })
+      .eq("id", row.id)
+      .eq("organization_id", row.organization_id);
+    await client.from("audit_log").insert({
+      actor_id: args.actor_id,
+      actor_type: "user",
+      actor_role: "org_admin",
+      organization_id: row.organization_id,
+      table_name: "agent_approval_queue",
+      record_id: row.id,
+      action: "agent_draft_send_failed",
+      diff: { channel, provider, reason: message },
+    });
+    return { ok: false, reason: "provider_error", message };
+  };
+
   // 2. WhatsApp is deferred until BSP wired.
   if (row.channel === "whatsapp") {
     await client.from("audit_log").insert({
@@ -118,24 +154,32 @@ export async function dispatchApprovedDraft(
 
   const body = (row.edited_body ?? row.draft_body).trim();
 
-  // 4. Channel dispatch.
-  const provider = pickProvider(row.channel);
+  // 4. Channel dispatch — resolve the org's live adapter, then send.
+  let provider: string;
   let providerMessageId: string;
-  try {
-    if (row.channel === "email") {
-      const to =
-        (lead.data?.email as string | undefined) ??
-        (lead.data?.contact_email as string | undefined);
-      if (!to)
-        return {
-          ok: false,
-          reason: "missing_recipient",
-          message: "no email on lead",
-        };
-      const adapter = email.getProvider(
-        provider as never,
-      );
-      const r = await adapter.send({
+  if (row.channel === "email") {
+    const to =
+      (lead.data?.email as string | undefined) ??
+      (lead.data?.contact_email as string | undefined);
+    if (!to)
+      return {
+        ok: false,
+        reason: "missing_recipient",
+        message: "no email on lead",
+      };
+    const resolved = await resolveOrgAdapter(
+      "email",
+      row.organization_id,
+      client,
+    );
+    if (!resolved.ok) {
+      return resolved.reason === "not_configured"
+        ? deferred("email")
+        : recordSendFailure("email", "unresolved", resolved.message);
+    }
+    provider = resolved.provider;
+    try {
+      const r = await resolved.adapter.send({
         kind: "custom",
         organization_id: row.organization_id,
         to,
@@ -143,28 +187,33 @@ export async function dispatchApprovedDraft(
         body_text: body,
       });
       providerMessageId = r.provider_message_id;
-    } else if (row.channel === "sms") {
-      const to =
-        (lead.data?.phone as string | undefined) ??
-        (lead.data?.contact_phone as string | undefined);
-      if (!to)
-        return {
-          ok: false,
-          reason: "missing_recipient",
-          message: "no phone on lead",
-        };
-      const adapter = sms.getProvider(provider as never);
-      // V1 SMS-mock: register the default DLT template (idempotent at the set
-      // level inside MockSmsProvider).
-      const maybeRegisterable = adapter as unknown as {
-        registerTemplate?: (id: string) => void;
+    } catch (err) {
+      return recordSendFailure("email", provider, errToMessage(err));
+    }
+  } else if (row.channel === "sms") {
+    const to =
+      (lead.data?.phone as string | undefined) ??
+      (lead.data?.contact_phone as string | undefined);
+    if (!to)
+      return {
+        ok: false,
+        reason: "missing_recipient",
+        message: "no phone on lead",
       };
-      if (typeof maybeRegisterable.registerTemplate === "function") {
-        registerFollowUpDltTemplates({
-          registerTemplate: maybeRegisterable.registerTemplate.bind(adapter),
-        });
-      }
-      const r = await adapter.send({
+    const resolved = await resolveOrgAdapter(
+      "sms",
+      row.organization_id,
+      client,
+      FOLLOW_UP_DLT_TEMPLATE_IDS,
+    );
+    if (!resolved.ok) {
+      return resolved.reason === "not_configured"
+        ? deferred("sms")
+        : recordSendFailure("sms", "unresolved", resolved.message);
+    }
+    provider = resolved.provider;
+    try {
+      const r = await resolved.adapter.send({
         kind: "templated",
         organization_id: row.organization_id,
         template_id: FOLLOW_UP_DLT_TEMPLATES[0]!.id,
@@ -172,35 +221,12 @@ export async function dispatchApprovedDraft(
         data: { name: deriveFirstName(lead.label), body },
       });
       providerMessageId = r.provider_message_id;
-    } else {
-      // exhaustive check; whatsapp already returned above
-      return { ok: false, reason: "not_configured" };
+    } catch (err) {
+      return recordSendFailure("sms", provider, errToMessage(err));
     }
-  } catch (err) {
-    const message =
-      err instanceof CommsError
-        ? `${err.kind}: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : "Unknown send error";
-    await client
-      .from("agent_approval_queue")
-      .update({
-        send_error: message.slice(0, 500),
-      })
-      .eq("id", row.id)
-      .eq("organization_id", row.organization_id);
-    await client.from("audit_log").insert({
-      actor_id: args.actor_id,
-      actor_type: "user",
-      actor_role: "org_admin",
-      organization_id: row.organization_id,
-      table_name: "agent_approval_queue",
-      record_id: row.id,
-      action: "agent_draft_send_failed",
-      diff: { channel: row.channel, provider, reason: message },
-    });
-    return { ok: false, reason: "provider_error", message };
+  } else {
+    // exhaustive check; whatsapp already returned above
+    return { ok: false, reason: "not_configured" };
   }
 
   // 5. Activity node + edge.
