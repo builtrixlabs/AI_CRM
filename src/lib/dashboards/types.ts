@@ -11,7 +11,7 @@ export type WidgetType = (typeof WIDGET_TYPES)[number];
 
 export const WIDGET_LABEL: Record<WidgetType, string> = {
   lead_count_by_state: "Lead count by state",
-  directive_fires_24h: "Directive fires (24h)",
+  directive_fires_24h: "AI Workflow fires (24h)",
   active_users_count: "Active users count",
   recent_leads: "Recent leads",
   agent_status: "Agent status",
@@ -19,7 +19,7 @@ export const WIDGET_LABEL: Record<WidgetType, string> = {
 
 export const WIDGET_DESCRIPTION: Record<WidgetType, string> = {
   lead_count_by_state: "KPI breakdown of leads by lifecycle state.",
-  directive_fires_24h: "Total directive invocations in the last 24h.",
+  directive_fires_24h: "Total AI workflow runs in the last 24h.",
   active_users_count: "Currently active org members.",
   recent_leads: "Last 10 leads ordered by creation time.",
   agent_status: "Provisioned vs. suspended agent count.",

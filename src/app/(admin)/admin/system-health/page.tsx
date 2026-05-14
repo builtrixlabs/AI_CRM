@@ -56,7 +56,7 @@ export default async function SystemHealthPage() {
           Posture: {h.posture}
         </p>
         <p className="text-xs">
-          {h.failed_directives.count_7d} failed directive invocations ·{" "}
+          {h.failed_directives.count_7d} failed AI workflow runs ·{" "}
           {h.inbox_failures.count_7d} inbox errors · {" "}
           {[h.voice_iq_configured, h.whatsapp_configured, h.email_configured].filter(Boolean).length}/3
           integrations configured
@@ -107,7 +107,7 @@ export default async function SystemHealthPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Failed directive invocations (7d)
+            Failed AI workflow runs (7d)
           </CardTitle>
         </CardHeader>
         <CardContent>

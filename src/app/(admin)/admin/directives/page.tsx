@@ -85,7 +85,7 @@ export default async function AdminDirectivesPage() {
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Directives</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">AI Workflows</h1>
           <p className="text-sm text-neutral-600">
             Automation rules — &quot;when X happens, do Y&quot;. Platform defaults are
             inherited; toggle off any you don&apos;t want, or author your own.
@@ -96,7 +96,7 @@ export default async function AdminDirectivesPage() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">
-          Active directives
+          Active AI workflows
         </h2>
         <div className="rounded-md border bg-white">
           <Table>
@@ -120,7 +120,7 @@ export default async function AdminDirectivesPage() {
                     colSpan={9}
                     className="text-neutral-500 py-8 text-center"
                   >
-                    No directives. Author one above to get started.
+                    No AI workflows. Author one above to get started.
                   </TableCell>
                 </TableRow>
               )}
@@ -199,7 +199,7 @@ export default async function AdminDirectivesPage() {
           Recent fires
         </h2>
         <p className="text-xs text-neutral-500">
-          Last 50 invocations across all directives in this org.
+          Last 50 runs across all AI workflows in this org.
         </p>
         <div className="rounded-md border bg-white">
           <Table>
@@ -219,7 +219,7 @@ export default async function AdminDirectivesPage() {
                     colSpan={5}
                     className="text-neutral-500 py-8 text-center"
                   >
-                    No directive invocations yet. Triggers will populate this as
+                    No AI workflow runs yet. Triggers will populate this as
                     your data flows in.
                   </TableCell>
                 </TableRow>

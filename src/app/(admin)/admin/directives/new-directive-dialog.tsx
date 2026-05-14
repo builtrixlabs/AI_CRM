@@ -84,7 +84,7 @@ export function NewDirectiveDialog() {
         if (result.error === "validation" && result.fieldErrors) {
           setErrors(result.fieldErrors);
         } else {
-          setErrors({ _form: result.message ?? "Failed to create directive." });
+          setErrors({ _form: result.message ?? "Failed to create AI workflow." });
         }
         return;
       }
@@ -101,7 +101,7 @@ export function NewDirectiveDialog() {
         data-testid="new-directive-trigger"
         onClick={() => setOpen(true)}
       >
-        + New directive
+        + New AI workflow
       </Button>
       <Dialog
         open={open}
@@ -112,7 +112,7 @@ export function NewDirectiveDialog() {
       >
         <DialogContent className="max-w-lg" data-testid="new-directive-dialog">
           <DialogHeader>
-            <DialogTitle>New directive</DialogTitle>
+            <DialogTitle>New AI workflow</DialogTitle>
           </DialogHeader>
 
         <div className="space-y-4">
@@ -236,7 +236,7 @@ export function NewDirectiveDialog() {
             </Select>
             {willRequireApproval && (
               <p className="text-xs text-amber-700">
-                T3+ directives require manual approval each time they fire.
+                T3+ AI workflows require manual approval each time they fire.
               </p>
             )}
           </div>
@@ -264,7 +264,7 @@ export function NewDirectiveDialog() {
             onClick={submit}
             disabled={pending}
           >
-            {pending ? "Creating…" : "Create directive"}
+            {pending ? "Creating…" : "Create AI workflow"}
           </Button>
         </DialogFooter>
         </DialogContent>

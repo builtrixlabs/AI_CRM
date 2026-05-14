@@ -134,7 +134,7 @@ async function runToggle(
       return {
         ok: false,
         error: "validation",
-        message: "Directive not found",
+        message: "AI workflow not found",
       };
     }
     return {

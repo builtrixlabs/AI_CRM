@@ -61,7 +61,7 @@ export const COMMANDS = [
   },
   {
     id: "nav-admin-directives",
-    label: "Admin · Directives",
+    label: "Admin · AI Workflows",
     group: "navigation",
     kind: "navigate",
     target: "/admin/directives",
