@@ -101,6 +101,11 @@ export const PERMISSIONS = [
   // ── Lead allocation (D-610) ─────────────────────────────────────────────
   "allocation_rules:manage",
 
+  // ── Brochures (D-607) ───────────────────────────────────────────────────
+  "brochures:view",
+  "brochures:upload",
+  "brochures:delete",
+
   // ── Documents / notes ───────────────────────────────────────────────────
   "documents:view",
   "documents:upload",
@@ -151,6 +156,9 @@ const READ_ONLY_OPERATIONAL: Permission[] = [
   "site_visits:view",
   "documents:view",
   "notes:view",
+  // D-607 — the brochure repository is readable by every operational role
+  // (cascades to sales_rep / manager / workspace_admin / phone-rep roles).
+  "brochures:view",
 ];
 
 const SALES_REP_OPERATIONAL: Permission[] = [
@@ -187,6 +195,9 @@ const MANAGER_OPERATIONAL: Permission[] = [
   "projects:assign_sales",
   // D-610 — managers configure lead-allocation rules.
   "allocation_rules:manage",
+  // D-607 — managers upload brochures to the repository (cascades to
+  // workspace_admin).
+  "brochures:upload",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -202,6 +213,8 @@ const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
   "leads:bulk_import",
   "campaigns:create",
   "campaigns:execute",
+  // D-607 — workspace admins can delete brochures from the repository.
+  "brochures:delete",
 ];
 
 const ORG_ADMIN_PLANE: Permission[] = [
@@ -239,6 +252,10 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "projects:assign_sales",
   // D-610 — org admin oversees lead-allocation rules.
   "allocation_rules:manage",
+  // D-607 — org admin owns the brochure repository surface.
+  "brochures:view",
+  "brochures:upload",
+  "brochures:delete",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [
@@ -292,6 +309,8 @@ const SITE_VISIT_COORDINATOR_OPERATIONAL: Permission[] = [
   "site_visits:assign",
   "notes:view",
   "notes:create",
+  // D-607 — coordinators can view brochures (read-only).
+  "brochures:view",
 ];
 
 // ── Maps ───────────────────────────────────────────────────────────────────
