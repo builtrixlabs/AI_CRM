@@ -114,6 +114,9 @@ We compete on three axes incumbents (Sell.do, Rsoft, LeadSquared, Zoho) cannot m
 Every marketing rupee a builder spends produces a lead somewhere. The CRM must capture **all of them**, automatically, with full source attribution and provenance.
 
 **V1 connectors (D-117):**
+
+> **V6 (2026-05-14):** D-117's source-specific connectors below were never built and are **deferred**. V6 moves lead ingestion to the Marketing Intelligence Hub sister product (D-604, `POST /api/sister/v1/leads`), which dedupes + curates upstream; the universal webform endpoint (D-417) remains the in-CRM fallback. See `docs/plans/v6-implementation-order.md` §5.6 + §9.
+
 - Webforms (any source, via universal API endpoint with org-scoped token)
 - Meta Lead Ads (Facebook + Instagram)
 - Google Ads (Lead Form Extensions)
