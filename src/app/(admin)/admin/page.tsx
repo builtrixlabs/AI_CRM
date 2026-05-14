@@ -163,12 +163,6 @@ export default async function AdminCockpitPage(props: {
                 {data.open_tickets}
               </p>
               <p className="text-sm text-muted-foreground">open tickets</p>
-              <Link
-                href="/admin/support/new"
-                className="text-sm underline"
-              >
-                File new →
-              </Link>
             </CardContent>
           </Card>
         </div>
