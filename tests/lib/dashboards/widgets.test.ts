@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   fetchActiveUsersCount,
   fetchAgentStatus,
-  fetchBookingPipeline,
   fetchDirectiveFires24h,
   fetchLeadCountByState,
   fetchRecentLeads,
@@ -140,56 +139,6 @@ describe("fetchAgentStatus", () => {
     expect(r.total_registered).toBe(3);
     expect(r.provisioned).toBe(2);
     expect(r.suspended).toBe(1);
-  });
-});
-
-describe("fetchBookingPipeline (D-224)", () => {
-  it("returns 5 zero-stages when org has no deals", async () => {
-    const chain = {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      is: vi.fn(() => Promise.resolve({ data: [], error: null })),
-    };
-    const c = makeClient({ nodes: chain });
-    const r = await fetchBookingPipeline(ORG, c);
-    expect(r.stages).toHaveLength(5);
-    expect(r.total_at_top).toBe(0);
-    expect(r.conversion_rate_overall).toBe(0);
-    for (const s of r.stages) expect(s.count).toBe(0);
-  });
-
-  it("tallies deal states into the funnel and computes conversion", async () => {
-    const chain = {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      is: vi.fn(() =>
-        Promise.resolve({
-          data: [
-            { state: "qualified" },
-            { state: "qualified" },
-            { state: "qualified" },
-            { state: "qualified" },
-            { state: "site_visit_scheduled" },
-            { state: "site_visit_done" },
-            { state: "negotiation" },
-            { state: "booked" },
-            { state: "lost" }, // outside funnel — ignored
-          ],
-          error: null,
-        }),
-      ),
-    };
-    const c = makeClient({ nodes: chain });
-    const r = await fetchBookingPipeline(ORG, c);
-    const map = new Map(r.stages.map((s) => [s.key, s.count]));
-    expect(map.get("qualified")).toBe(4);
-    expect(map.get("site_visit_scheduled")).toBe(1);
-    expect(map.get("site_visit_done")).toBe(1);
-    expect(map.get("negotiation")).toBe(1);
-    expect(map.get("booked")).toBe(1);
-    expect(r.total_at_top).toBe(4);
-    // 1 booked / 4 qualified = 0.25
-    expect(r.conversion_rate_overall).toBeCloseTo(0.25, 5);
   });
 });
 

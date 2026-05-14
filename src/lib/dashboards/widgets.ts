@@ -118,56 +118,6 @@ export type AgentStatusData = {
   suspended: number;
 };
 
-export const BOOKING_FUNNEL_STAGES = [
-  "qualified",
-  "site_visit_scheduled",
-  "site_visit_done",
-  "negotiation",
-  "booked",
-] as const;
-export type BookingFunnelStage = (typeof BOOKING_FUNNEL_STAGES)[number];
-
-export type BookingPipelineData = {
-  stages: Array<{ key: BookingFunnelStage; count: number }>;
-  total_at_top: number;
-  conversion_rate_overall: number;
-};
-
-export async function fetchBookingPipeline(
-  organization_id: string,
-  client: SupabaseClient = getSupabaseAdmin(),
-): Promise<BookingPipelineData> {
-  const counts = new Map<BookingFunnelStage, number>();
-  for (const s of BOOKING_FUNNEL_STAGES) counts.set(s, 0);
-
-  const { data, error } = await client
-    .from("nodes")
-    .select("state")
-    .eq("organization_id", organization_id)
-    .eq("node_type", "deal")
-    .is("deleted_at", null);
-
-  if (!error && data) {
-    for (const row of data as Array<{ state: string | null }>) {
-      const s = row.state as BookingFunnelStage | null;
-      if (s && counts.has(s)) {
-        counts.set(s, (counts.get(s) ?? 0) + 1);
-      }
-    }
-  }
-
-  const stages = BOOKING_FUNNEL_STAGES.map((key) => ({
-    key,
-    count: counts.get(key) ?? 0,
-  }));
-  const total_at_top = stages[0].count;
-  const booked = stages[stages.length - 1].count;
-  const conversion_rate_overall =
-    total_at_top > 0 ? booked / total_at_top : 0;
-
-  return { stages, total_at_top, conversion_rate_overall };
-}
-
 export async function fetchAgentStatus(
   organization_id: string,
   client: SupabaseClient = getSupabaseAdmin(),
@@ -200,7 +150,6 @@ export type WidgetData = {
   active_users_count: ActiveUsersCountData;
   recent_leads: RecentLeadsData;
   agent_status: AgentStatusData;
-  booking_pipeline: BookingPipelineData;
 };
 
 export async function fetchWidgetData<T extends WidgetType>(
@@ -220,8 +169,6 @@ export async function fetchWidgetData<T extends WidgetType>(
       return (await fetchRecentLeads(organization_id, c)) as WidgetData[T];
     case "agent_status":
       return (await fetchAgentStatus(organization_id, c)) as WidgetData[T];
-    case "booking_pipeline":
-      return (await fetchBookingPipeline(organization_id, c)) as WidgetData[T];
     default: {
       const _exhaustive: never = type;
       throw new Error(`Unknown widget type: ${String(_exhaustive)}`);
