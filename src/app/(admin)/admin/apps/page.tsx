@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Sparkles, Mic, Scale, Boxes } from "lucide-react";
+import { ArrowLeft, Sparkles, Mic, Scale, Boxes, Megaphone } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { AppAccessCard, type AppEntry } from "@/components/admin/app-access-card";
 
@@ -24,6 +24,14 @@ const APPS: AppEntry[] = [
     status: "active",
     Icon: Mic,
     href: "/admin/integrations/voice-iq",
+  },
+  {
+    slug: "mih",
+    name: "Marketing Intelligence Hub",
+    description:
+      "Source ingestion + dedup + curation for every lead a builder's marketing spend produces; pushes curated leads into the CRM. Sister product — connects via D-604 (V6 Phase 1).",
+    status: "coming_soon",
+    Icon: Megaphone,
   },
   {
     slug: "pscrm",
