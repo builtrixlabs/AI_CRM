@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { CommsError } from "@/lib/comms/types";
 import { resolveOrgAdapter } from "@/lib/comms/resolve-org-adapter";
+import { getBrochureSignedUrl } from "@/lib/brochures/repository";
 import {
   FOLLOW_UP_DLT_TEMPLATES,
   FOLLOW_UP_DLT_TEMPLATE_IDS,
@@ -58,7 +59,7 @@ export async function dispatchApprovedDraft(
   const { data: rowData, error: rowErr } = await client
     .from("agent_approval_queue")
     .select(
-      "id, organization_id, workspace_id, lead_id, agent_kind, channel, draft_body, edited_body, status, sent_at",
+      "id, organization_id, workspace_id, lead_id, agent_kind, channel, draft_body, edited_body, status, sent_at, attachments",
     )
     .eq("id", args.queue_id)
     .eq("organization_id", args.organization_id)
@@ -76,6 +77,8 @@ export async function dispatchApprovedDraft(
     edited_body: string | null;
     status: "pending" | "approved" | "rejected" | "sent";
     sent_at: string | null;
+    // D-600 — brochure_send rows carry brochure refs here.
+    attachments: unknown;
   };
 
   if (row.status === "sent") return { ok: true, already_sent: true };
@@ -234,6 +237,29 @@ export async function dispatchApprovedDraft(
         : recordSendFailure("whatsapp", "unresolved", resolved.message);
     }
     provider = resolved.provider;
+
+    // D-600 — brochure_send rows carry brochure refs in `attachments`.
+    // Resolve FRESH 1h signed URLs at dispatch time (queue-time URLs would
+    // be stale by the time an operator approves) and append them to the
+    // body. A brochure deleted since queue-time resolves to nothing and is
+    // silently skipped — never a dead link.
+    let waBody = body;
+    const attachments = Array.isArray(row.attachments) ? row.attachments : [];
+    if (attachments.length > 0) {
+      const links: string[] = [];
+      for (const att of attachments) {
+        const ref = att as { brochure_id?: unknown; title?: unknown };
+        if (typeof ref.brochure_id !== "string") continue;
+        const signed = await getBrochureSignedUrl(
+          row.organization_id,
+          ref.brochure_id,
+          client,
+        );
+        if (signed.ok) links.push(`${signed.title}: ${signed.url}`);
+      }
+      if (links.length > 0) waBody = `${body}\n\n${links.join("\n")}`;
+    }
+
     const tpl = FOLLOW_UP_WA_TEMPLATES[0]!;
     try {
       const r = await resolved.adapter.send({
@@ -242,7 +268,7 @@ export async function dispatchApprovedDraft(
         template_id: tpl.id,
         to_phone_e164: to,
         language_code: tpl.language_code,
-        data: { name: deriveFirstName(lead.label), body },
+        data: { name: deriveFirstName(lead.label), body: waBody },
       });
       providerMessageId = r.provider_message_id;
     } catch (err) {

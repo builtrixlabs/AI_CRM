@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { updateNodeData } from "@/lib/nodes/api";
 import { dispatchDirective } from "@/lib/doe/runtime";
+import { inngest } from "@/lib/inngest/client";
+import { isBrochureAction } from "@/lib/agents/brochure-agent";
 import {
   callNextBestActionPayloadSchema,
   type BuiltrixEvent,
@@ -84,6 +86,28 @@ export async function onCallNextBestAction(
     },
     { client: deps.client }
   );
+
+  // D-600 — when the next-best-action asks for project material, fan out
+  // to the Brochure Agent via Inngest. Best-effort: a send failure logs
+  // but never fails the event handler (best-effort-event-emit).
+  if (isBrochureAction(payload.nba.action)) {
+    try {
+      await inngest.send({
+        name: "agent/brochure.requested",
+        data: {
+          organization_id: envelope.organization_id,
+          lead_id: payload.lead_id,
+          nba_action: payload.nba.action,
+          call_id: payload.call_id ?? null,
+        },
+      });
+    } catch (err) {
+      console.warn(
+        "[onCallNextBestAction] brochure agent emit failed",
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
 
   return { ok: true, status: "ok", deduped: false, node_id: payload.lead_id };
 }

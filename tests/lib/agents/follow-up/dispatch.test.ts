@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dispatchApprovedDraft } from "@/lib/agents/follow-up/dispatch";
+import { getBrochureSignedUrl } from "@/lib/brochures/repository";
+
+// D-600 — dispatch resolves brochure attachments via getBrochureSignedUrl.
+// Mock just that one export; the rest of the repository module (and its
+// server-only admin import) never loads.
+vi.mock("@/lib/brochures/repository", () => ({
+  getBrochureSignedUrl: vi.fn(),
+}));
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const ORG_B = "22222222-3333-4333-8444-555555555555";
@@ -19,6 +27,7 @@ type QueueRow = {
   edited_body: string | null;
   status: "pending" | "approved" | "rejected" | "sent";
   sent_at: string | null;
+  attachments?: unknown;
 };
 
 type LeadRow = {
@@ -95,6 +104,7 @@ function row(over: Partial<QueueRow> = {}): QueueRow {
     edited_body: null,
     status: "approved",
     sent_at: null,
+    attachments: [],
     ...over,
   };
 }
@@ -242,6 +252,7 @@ function makeClient(opts: Opts) {
 beforeEach(() => {
   // Reset mock provider id counters by importing fresh — modules cache so
   // counters increase across tests. Tests below assert presence, not exact ids.
+  vi.mocked(getBrochureSignedUrl).mockReset();
 });
 
 describe("dispatchApprovedDraft — email", () => {
@@ -644,5 +655,79 @@ describe("dispatchApprovedDraft — guards", () => {
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("not_approved");
+  });
+});
+
+describe("dispatchApprovedDraft — brochure attachments (D-600)", () => {
+  it("resolves a fresh signed URL per attachment and appends it (whatsapp)", async () => {
+    vi.mocked(getBrochureSignedUrl).mockResolvedValue({
+      ok: true,
+      url: "https://signed/brochure-link",
+      title: "3BHK floor plan",
+    });
+    const m = makeClient({
+      queue: row({
+        channel: "whatsapp",
+        agent_kind: "brochure_send",
+        attachments: [
+          {
+            brochure_id: "broc-1",
+            title: "3BHK floor plan",
+            document_type: "floor_plan",
+          },
+        ],
+      }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    // Fresh URL resolved at dispatch time, org-scoped, against the same client.
+    expect(vi.mocked(getBrochureSignedUrl)).toHaveBeenCalledWith(
+      ORG,
+      "broc-1",
+      m.client,
+    );
+  });
+
+  it("skips a deleted brochure (signed URL not_found) without failing the send", async () => {
+    vi.mocked(getBrochureSignedUrl).mockResolvedValue({
+      ok: false,
+      reason: "not_found",
+    });
+    const m = makeClient({
+      queue: row({
+        channel: "whatsapp",
+        agent_kind: "brochure_send",
+        attachments: [
+          { brochure_id: "gone", title: "x", document_type: "brochure" },
+        ],
+      }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    // The send still succeeds — a missing attachment is just no link.
+    expect(r.ok).toBe(true);
+  });
+
+  it("leaves a non-attachment row's dispatch path untouched", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp", attachments: [] }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    expect(vi.mocked(getBrochureSignedUrl)).not.toHaveBeenCalled();
   });
 });

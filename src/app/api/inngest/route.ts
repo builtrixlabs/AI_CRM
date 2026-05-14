@@ -9,6 +9,7 @@ import { auditPrune } from "@/lib/inngest/functions/audit-prune";
 import { followUpAgentSweep } from "@/lib/inngest/functions/follow-up-agent-sweep";
 import { autoSuspendCron } from "@/lib/inngest/functions/auto-suspend";
 import { presalesAllocationOnLeadCreated } from "@/lib/inngest/functions/presales-allocation";
+import { brochureAgentOnRequest } from "@/lib/inngest/functions/brochure-agent";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -23,5 +24,7 @@ export const { GET, POST, PUT } = serve({
     autoSuspendCron,
     // D-610 — pre-sales auto-allocation on lead.created.
     presalesAllocationOnLeadCreated,
+    // D-600 — Brochure Agent on agent/brochure.requested.
+    brochureAgentOnRequest,
   ],
 });
