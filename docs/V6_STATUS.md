@@ -41,7 +41,7 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 
 | ID | Directive | Status | Depends on |
 |---|---|---|---|
-| D-603 | Wire integration adapters into agent dispatch (THE BIG ONE) | planned | D-432, D-433, D-434, D-435, D-439 |
+| D-603 | Wire integration adapters into agent dispatch (THE BIG ONE) | **shipped** `#83` | D-432, D-433, D-434, D-435, D-439 |
 | D-604 | Marketing Intelligence Hub (MIH) inbound API — `/api/sister/v1/leads` | planned | D-440, D-443, baseline 122 |
 | D-610 | Pre-sales Auto-Allocation Engine | planned | D-007, D-018, teams (D-001) |
 | D-608 | Project ↔ Sales-Person Mapping | planned | D-018 |
@@ -50,6 +50,8 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 | D-617 | Cmd+K shortcut completion | planned | D-008 |
 
 **Gate 1:** Real outbound message leaves the system; MIH POST → lead created → auto-allocated → on rep dashboard within 5s; Site Visit tab loads with filtering; Command Center shows real org-scoped KPIs.
+
+**D-603 shipped 2026-05-14** — PR [#83](https://github.com/builtrixlabs/AI_CRM/pull/83), squash `5606620` → `v6-phase-1`. `pickProvider() → "mock"` replaced with `resolveOrgAdapter`; email + sms + whatsapp follow-up dispatch resolve the real per-org adapter; no config → deferred (the "configure your <channel> integration" queue card). **No migration — Gate 4 (migrations) = N/A.** +39 unit + 1 cross-tenant integration test (1743 → 1782 green); `tsc` clean on changed files; security scan clean; `v6-phase-1` post-merge build green (`ai-2v6y2t3qn`). The deployed `/admin/agents/queue` route was verified rendering for an authenticated org_admin via `scripts/demo/verify-d603-queue.ts`; the interactive click-through smoke and per-org live-credential testing are deferred per operator (2026-05-14) — the latter needs `INTEGRATION_ENCRYPTION_KEY` on the preview env.
 
 ## 3. Phase 2 — AI-native behaviors
 
@@ -146,9 +148,10 @@ v6 Phase 0 (shipped):       1743 tests / 186 files green — catalog + inventory
                             booking-pipeline + post-sales suites removed;
                             sidebar / token / directives suites realigned
 v6 Phase 1:                 ~ +120 unit + 4 integration + 2 E2E (target)
+                            D-603 shipped: +39 unit + 1 integration
 v6 Phase 2:                 ~ +150 unit + 6 integration + 4 E2E (target)
 v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 1743 unit tests green (Phase 0 complete)
+v6 current:                 1782 unit tests / 189 files green (Phase 0 + D-603)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.
