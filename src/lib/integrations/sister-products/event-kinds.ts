@@ -1,8 +1,8 @@
 /**
  * D-442 — canonical event kinds emitted to sister products.
  *
- * Single source of truth for which event kinds PSCRM / lead-sources /
- * Legal Auditor can subscribe to, and the zod payload schema for each.
+ * Single source of truth for which event kinds sister products can
+ * subscribe to, and the zod payload schema for each.
  * Every emit helper in `./emit-helpers.ts` validates against one of
  * these schemas before fanning out via `emitEvent`.
  *

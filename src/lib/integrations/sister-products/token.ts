@@ -15,9 +15,7 @@ import * as crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const SISTER_PRODUCT_KINDS = [
-  "post_sales_crm",
-  "lead_sources",
-  "legal_auditor",
+  "marketing_intelligence_hub",
 ] as const;
 export type ProductKind = (typeof SISTER_PRODUCT_KINDS)[number];
 

@@ -16,15 +16,13 @@ type Props = {
 type Issued = { token: string; last4: string };
 
 const PRODUCT_OPTIONS: { id: ProductKind; label: string }[] = [
-  { id: "post_sales_crm", label: "Post-Sales CRM" },
-  { id: "lead_sources", label: "Lead sources app" },
-  { id: "legal_auditor", label: "Legal Auditor" },
+  { id: "marketing_intelligence_hub", label: "Marketing Intelligence Hub" },
 ];
 
 export function IssueTokenForm({ orgs }: Props) {
   const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
   const [productKind, setProductKind] = useState<ProductKind>(
-    "post_sales_crm",
+    "marketing_intelligence_hub",
   );
   const [pending, startTransition] = useTransition();
   const [issued, setIssued] = useState<Issued | null>(null);

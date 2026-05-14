@@ -15,7 +15,12 @@ vi.mock("@/lib/events/inbox", () => ({
 
 import { POST } from "@/app/api/sister/events/inbox/route";
 
-const NOW = "2026-05-13T10:00:00.000Z";
+// V6 (implementation-order §5.5): PSCRM + Legal Auditor inbound paths are
+// dropped. The events inbox keeps only the lead_sources → lead.ingested
+// path, so these tests exercise that one. The sister-product auth
+// middleware is mocked, so a lead_sources product_kind can still be
+// simulated even though V6 issues marketing_intelligence_hub tokens only.
+const NOW = "2026-05-14T10:00:00.000Z";
 const ORG = "00000000-0000-4000-8000-000000000001";
 
 function makeReq(opts: {
@@ -59,7 +64,7 @@ describe("POST /api/sister/events/inbox — auth", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     const res = await POST(makeReq({ body: "{not json}" }) as never);
     expect(res.status).toBe(400);
@@ -73,7 +78,7 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     const otherOrg = "00000000-0000-4000-8000-0000000000ff";
     const res = await POST(
@@ -82,8 +87,8 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: otherOrg,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "lead_sources",
           ts: NOW,
           payload: {},
         },
@@ -93,7 +98,7 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it("returns 403 source_product_mismatch when token=lead_sources but envelope says post_sales_crm", async () => {
+  it("returns 403 source_product_mismatch when token=lead_sources but envelope says voice_iq", async () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
@@ -105,8 +110,8 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: ORG,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "voice_iq",
           ts: NOW,
           payload: {},
         },
@@ -116,11 +121,11 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it("returns 403 event_kind_not_allowed when post_sales_crm token tries to post lead.ingested", async () => {
+  it("returns 403 event_kind_not_allowed when lead_sources token tries a non-lead.ingested kind", async () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     const res = await POST(
       makeReq({
@@ -128,8 +133,8 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: ORG,
-          event_kind: "lead.ingested",
-          source_product: "post_sales_crm",
+          event_kind: "call.audited",
+          source_product: "lead_sources",
           ts: NOW,
           payload: {},
         },
@@ -144,15 +149,15 @@ describe("POST /api/sister/events/inbox — tenant + product gating", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     const res = await POST(
       makeReq({
         auth: "Bearer good",
         body: {
           organization_id: ORG,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "lead_sources",
           ts: NOW,
           payload: {},
         },
@@ -169,7 +174,7 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     mocks.dispatch.mockResolvedValueOnce({
       ok: true,
@@ -183,13 +188,13 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: ORG,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "lead_sources",
           ts: NOW,
           payload: {
-            deal_id: "00000000-0000-4000-8000-000000000001",
-            milestone_slug: "demand_letter_sent",
-            milestone_status: "completed",
+            external_id: "mih-lead-001",
+            source: "meta_lead_ads",
+            captured_at: NOW,
           },
         },
       }) as never,
@@ -202,7 +207,7 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     mocks.dispatch.mockResolvedValueOnce({
       ok: false,
@@ -215,8 +220,8 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: ORG,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "lead_sources",
           ts: NOW,
           payload: { malformed: true },
         },
@@ -229,7 +234,7 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
     mocks.authenticate.mockResolvedValueOnce({
       ok: true,
       org_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "lead_sources",
     });
     mocks.dispatch.mockResolvedValueOnce({
       ok: true,
@@ -243,13 +248,13 @@ describe("POST /api/sister/events/inbox — happy + rejected dispatch", () => {
         body: {
           event_id: "evt-12345678",
           organization_id: ORG,
-          event_kind: "post_sales.milestone_updated",
-          source_product: "post_sales_crm",
+          event_kind: "lead.ingested",
+          source_product: "lead_sources",
           ts: NOW,
           payload: {
-            deal_id: "00000000-0000-4000-8000-000000000001",
-            milestone_slug: "x",
-            milestone_status: "completed",
+            external_id: "mih-lead-001",
+            source: "meta_lead_ads",
+            captured_at: NOW,
           },
         },
       }) as never,

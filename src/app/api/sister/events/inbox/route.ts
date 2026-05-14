@@ -5,11 +5,10 @@
  *   1. Token must verify (not revoked) — 401 if not.
  *   2. Envelope.organization_id must equal token's org_id — 403 if not.
  *   3. Envelope.source_product must align with token.product_kind —
- *      403 if mismatched (post_sales_crm token can only post
- *      post_sales.*; lead_sources can only post lead.ingested).
+ *      403 if mismatched (lead_sources tokens can only post
+ *      lead.ingested).
  *
- * Routing is delegated to the existing dispatchInboxEvent (which now
- * knows about the 4 sister-product kinds — D-443 inbox.ts patch).
+ * Routing is delegated to the existing dispatchInboxEvent.
  * Idempotency: per-(org, event_id) via event_inbox_log.
  */
 
@@ -21,18 +20,14 @@ import type { BuiltrixEvent } from "@/lib/events/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Sources = "post_sales_crm" | "lead_sources";
+type Sources = "lead_sources";
 
 const ALLOWED_SOURCE_BY_PRODUCT: Record<string, Sources> = {
-  post_sales_crm: "post_sales_crm",
   lead_sources: "lead_sources",
-  legal_auditor: "legal_auditor" as Sources,
 };
 
 const ALLOWED_KIND_PREFIX: Record<string, string[]> = {
-  post_sales_crm: ["post_sales."],
   lead_sources: ["lead.ingested"],
-  legal_auditor: ["legal."],
 };
 
 function kindIsAllowed(product_kind: string, kind: string): boolean {

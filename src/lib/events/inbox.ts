@@ -7,11 +7,6 @@ import { onBantExtracted } from "./call-audit/onBantExtracted";
 import { onLeadIntentChanged } from "./call-audit/onLeadIntentChanged";
 import { onCallComplianceFlag } from "./call-audit/onCallComplianceFlag";
 import { onCallNextBestAction } from "./call-audit/onCallNextBestAction";
-import {
-  onPostSalesMilestoneUpdated,
-  onPostSalesDemandLetterSent,
-  onPostSalesHandoverCompleted,
-} from "./post-sales";
 import { onLeadIngested } from "./lead-sources";
 
 export type DispatchDeps = {
@@ -84,12 +79,7 @@ export async function findExistingInboxLogEvent(
   return data[0] as { status: "ok" | "deduped" | "rejected" | "error" };
 }
 
-const SISTER_PRODUCT_EVENT_KINDS = new Set([
-  "post_sales.milestone_updated",
-  "post_sales.demand_letter_sent",
-  "post_sales.handover_completed",
-  "lead.ingested",
-]);
+const SISTER_PRODUCT_EVENT_KINDS = new Set(["lead.ingested"]);
 
 export async function dispatchInboxEvent(
   envelope: BuiltrixEvent,
@@ -165,12 +155,6 @@ export async function dispatchInboxEvent(
       result = await onCallComplianceFlag(envelope, { client });
     } else if (envelope.event_kind === "call.next_best_action") {
       result = await onCallNextBestAction(envelope, { client });
-    } else if (envelope.event_kind === "post_sales.milestone_updated") {
-      result = await onPostSalesMilestoneUpdated(envelope, { client });
-    } else if (envelope.event_kind === "post_sales.demand_letter_sent") {
-      result = await onPostSalesDemandLetterSent(envelope, { client });
-    } else if (envelope.event_kind === "post_sales.handover_completed") {
-      result = await onPostSalesHandoverCompleted(envelope, { client });
     } else if (envelope.event_kind === "lead.ingested") {
       result = await onLeadIngested(envelope, { client });
     } else {
