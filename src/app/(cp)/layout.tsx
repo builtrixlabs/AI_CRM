@@ -1,68 +1,14 @@
-import Link from "next/link";
-import { Separator } from "@/components/ui/separator";
-import { UserMenu } from "@/components/auth/user-menu";
-import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { redirect } from "next/navigation";
 
-const NAV = [
-  { href: "/cp/submit", label: "Submit lead" },
-  { href: "/cp/submissions", label: "My submissions" },
-  { href: "/cp/settings", label: "Settings" },
-];
-
-export default async function CpLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const user = await getCurrentUser();
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b bg-emerald-900 text-emerald-50">
-        <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between gap-4">
-          <Link href="/cp" className="font-semibold tracking-tight">
-            Builtrix · Channel Partner Portal
-          </Link>
-          {user && (
-            <UserMenu
-              displayName={user.profile.display_name}
-              email={user.user.email}
-              settingsHref="/cp/settings"
-              nameClassName="text-xs text-emerald-200"
-              buttonClassName="rounded-md border border-emerald-700 bg-emerald-800 px-3 py-1 text-xs hover:bg-emerald-700"
-            />
-          )}
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-7xl flex-1 w-full px-6 py-8 grid grid-cols-[200px_1fr] gap-8">
-        <nav className="text-sm">
-          <ul className="space-y-1">
-            {NAV.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className="block px-3 py-2 rounded-md hover:bg-neutral-100 text-neutral-700"
-                >
-                  {item.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <Separator className="my-4" />
-          <p className="text-xs text-neutral-500 px-3">
-            Submit qualified leads. Track your submissions. Real-estate
-            channel partners are first-class.
-          </p>
-        </nav>
-        <main>{children}</main>
-      </div>
-
-      <footer className="border-t mt-auto">
-        <div className="mx-auto max-w-7xl px-6 py-3 text-xs text-neutral-500">
-          Builtrix Labs · CP portal · D-221
-        </div>
-      </footer>
-    </div>
-  );
+/**
+ * D-221 Channel Partner portal — DORMANT in V6 (implementation-order §5.4).
+ *
+ * Every `/cp/*` route is unmounted: this layout redirects all requests to
+ * sign-in before any child page renders. The route files under
+ * `src/app/(cp)/cp/`, the `src/lib/cp/` module, the `channel_partner`
+ * base_role, and the CP DB tables are all retained for the revival path —
+ * restore this file from git history to re-mount the portal.
+ */
+export default function CpLayout() {
+  redirect("/auth/sign-in");
 }
