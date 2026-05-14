@@ -158,12 +158,8 @@ describe("sister-product token primitives", () => {
     expect(generateTokenPlaintext()).not.toBe(t);
   });
 
-  it("SISTER_PRODUCT_KINDS contains the 3 known products", () => {
-    expect(SISTER_PRODUCT_KINDS).toEqual([
-      "post_sales_crm",
-      "lead_sources",
-      "legal_auditor",
-    ]);
+  it("SISTER_PRODUCT_KINDS is marketing_intelligence_hub only (V6)", () => {
+    expect(SISTER_PRODUCT_KINDS).toEqual(["marketing_intelligence_hub"]);
   });
 });
 
@@ -177,7 +173,7 @@ describe("issueToken + verifyToken roundtrip", () => {
     // @ts-expect-error — fake doesn't fully match SupabaseClient shape
     const out = await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     expect(out.token).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -185,7 +181,7 @@ describe("issueToken + verifyToken roundtrip", () => {
     const stored = admin._rows()[0];
     expect(stored.token_hash).toBe(hashToken(out.token));
     expect(stored.organization_id).toBe(ORG);
-    expect(stored.product_kind).toBe("post_sales_crm");
+    expect(stored.product_kind).toBe("marketing_intelligence_hub");
     expect(stored.last4).toBe(out.last4);
     expect(stored.revoked_at).toBeNull();
   });
@@ -194,12 +190,12 @@ describe("issueToken + verifyToken roundtrip", () => {
     // @ts-expect-error fake
     const issued = await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "lead_sources",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake
     const v = await verifyToken(admin, issued.token);
-    expect(v).toEqual({ org_id: ORG, product_kind: "lead_sources" });
+    expect(v).toEqual({ org_id: ORG, product_kind: "marketing_intelligence_hub" });
   });
 
   it("verifyToken returns null for an unknown token", async () => {
@@ -212,7 +208,7 @@ describe("issueToken + verifyToken roundtrip", () => {
     // @ts-expect-error fake
     const issued = await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake
@@ -236,13 +232,13 @@ describe("listTokens", () => {
     // @ts-expect-error fake
     await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake
     await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "lead_sources",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake
@@ -257,13 +253,13 @@ describe("listTokens", () => {
     // @ts-expect-error fake
     await issueToken(admin, {
       organization_id: ORG,
-      product_kind: "post_sales_crm",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake
     await issueToken(admin, {
       organization_id: otherOrg,
-      product_kind: "post_sales_crm",
+      product_kind: "marketing_intelligence_hub",
       created_by: ADMIN_USER,
     });
     // @ts-expect-error fake

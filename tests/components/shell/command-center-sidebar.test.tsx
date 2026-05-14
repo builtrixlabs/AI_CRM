@@ -9,13 +9,14 @@ vi.mock("next/navigation", () => ({
 import { CommandCenterSidebar } from "@/components/shell/command-center-sidebar";
 
 // Permission sets per role — keep in sync with src/lib/auth/rbac.ts so a
-// real role change shows up as a test failure here.
-const PERMS_SUPER_ADMIN = ["catalog:admin_override", "views:customize"];
+// real role change shows up as a test failure here. V6 (implementation-
+// order step 0.2) removed the Inventory nav entry + the catalog/inventory
+// perms, so those no longer appear here.
+const PERMS_SUPER_ADMIN = ["views:customize"];
 const PERMS_ORG_ADMIN = [
   "leads:view",
   "deals:view",
   "contacts:view",
-  "catalog:admin_override",
   "views:customize",
 ];
 const PERMS_MANAGER = [
@@ -26,7 +27,6 @@ const PERMS_MANAGER = [
   "leads:export",
   "calls:listen",
   "audit:view",
-  "inventory:block",
 ];
 const PERMS_SALES_REP = [
   "leads:view",
@@ -112,44 +112,40 @@ describe("CommandCenterSidebar — operational items gated by permission", () =>
     expect(screen.queryByLabelText("Leads & Contacts")).toBeNull();
     expect(screen.queryByLabelText("Deals & Calls")).toBeNull();
     expect(screen.queryByLabelText("Communications")).toBeNull();
-    expect(screen.queryByLabelText("Inventory")).toBeNull();
     expect(screen.queryByLabelText("Pipelines & Views")).toBeNull();
     expect(screen.queryByLabelText("System Health")).toBeNull();
   });
 });
 
 describe("CommandCenterSidebar — admin-surface items gated by base_role AND permission", () => {
-  it("manager does NOT see Inventory / Pipelines & Views (not in ADMIN_ROLES)", () => {
+  it("manager does NOT see Pipelines & Views / System Health (not in ADMIN_ROLES)", () => {
     render(
       <CommandCenterSidebar baseRole="manager" permissions={PERMS_MANAGER} />,
     );
-    expect(screen.queryByLabelText("Inventory")).toBeNull();
     expect(screen.queryByLabelText("Pipelines & Views")).toBeNull();
     expect(screen.queryByLabelText("System Health")).toBeNull();
   });
 
-  it("sales_rep does NOT see Inventory / Pipelines & Views / System Health", () => {
+  it("sales_rep does NOT see Pipelines & Views / System Health", () => {
     render(
       <CommandCenterSidebar baseRole="sales_rep" permissions={PERMS_SALES_REP} />,
     );
-    expect(screen.queryByLabelText("Inventory")).toBeNull();
     expect(screen.queryByLabelText("Pipelines & Views")).toBeNull();
     expect(screen.queryByLabelText("System Health")).toBeNull();
   });
 
-  it("org_admin sees Inventory / Pipelines & Views / System Health", () => {
+  it("org_admin sees Pipelines & Views / System Health", () => {
     render(
       <CommandCenterSidebar baseRole="org_admin" permissions={PERMS_ORG_ADMIN} />,
     );
-    expect(screen.getByLabelText("Inventory")).toBeInTheDocument();
     expect(screen.getByLabelText("Pipelines & Views")).toBeInTheDocument();
     expect(screen.getByLabelText("System Health")).toBeInTheDocument();
   });
 
-  it("org_admin without catalog:admin_override hides Inventory but still sees System Health", () => {
-    const denied = PERMS_ORG_ADMIN.filter((p) => p !== "catalog:admin_override");
+  it("org_admin without views:customize hides Pipelines & Views but still sees System Health", () => {
+    const denied = PERMS_ORG_ADMIN.filter((p) => p !== "views:customize");
     render(<CommandCenterSidebar baseRole="org_admin" permissions={denied} />);
-    expect(screen.queryByLabelText("Inventory")).toBeNull();
+    expect(screen.queryByLabelText("Pipelines & Views")).toBeNull();
     expect(screen.getByLabelText("System Health")).toBeInTheDocument();
   });
 
@@ -160,7 +156,6 @@ describe("CommandCenterSidebar — admin-surface items gated by base_role AND pe
         permissions={PERMS_SUPER_ADMIN}
       />,
     );
-    expect(screen.getByLabelText("Inventory")).toBeInTheDocument();
     expect(screen.getByLabelText("Pipelines & Views")).toBeInTheDocument();
     expect(screen.getByLabelText("System Health")).toBeInTheDocument();
   });

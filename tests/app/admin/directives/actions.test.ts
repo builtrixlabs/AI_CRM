@@ -132,7 +132,7 @@ describe("directiveAction — toggle", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBe("validation");
-      expect(r.message).toBe("Directive not found");
+      expect(r.message).toBe("AI workflow not found");
     }
   });
 
