@@ -46,7 +46,7 @@ export function instantiateSmsAdapter(
       });
     }
     case "mock":
-      return new MockSmsProvider();
+      return new MockSmsProvider(allowed_templates);
     case "gupshup":
       throw new CommsError(
         `sms provider not yet supported: ${row.provider}`,

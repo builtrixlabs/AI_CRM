@@ -23,10 +23,17 @@ export class MockWhatsAppProvider implements WhatsAppAdapter {
   };
 
   private outbox: Recorded[] = [];
-  private approvedTemplates = new Set<string>();
+  private approvedTemplates: Set<string>;
   private inboundHandlers = new Set<
     (e: InboundWhatsAppEvent) => void | Promise<void>
   >();
+
+  // `seed` pre-fills the approved-template registry so a mock instantiated
+  // via instantiateWhatsAppAdapter(row) behaves like the real Gupshup /
+  // Cloud API adapters, which take their approved templates at construction.
+  constructor(seed?: ReadonlySet<string>) {
+    this.approvedTemplates = new Set(seed);
+  }
 
   async send(args: WhatsAppSendArgs): Promise<WhatsAppSendResult> {
     if (!args.to_phone_e164 || !args.organization_id) {

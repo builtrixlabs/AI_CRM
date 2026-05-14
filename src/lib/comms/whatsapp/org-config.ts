@@ -80,7 +80,7 @@ export function instantiateWhatsAppAdapter(
       });
     }
     case "mock":
-      return new MockWhatsAppProvider();
+      return new MockWhatsAppProvider(allowed);
     default: {
       const exhaustive: never = row.provider;
       throw new CommsError(
