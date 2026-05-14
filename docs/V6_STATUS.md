@@ -16,18 +16,26 @@ Procedure: [`docs/runbooks/v6-stabilization-removals.md`](./runbooks/v6-stabiliz
 
 | Step | Action | Directive(s) | Status |
 |---|---|---|---|
-| 0.1 | Drop catalog UI + unreferenced tables | D-223 / D-320 REMOVE | planned |
-| 0.2 | Drop inventory UI + tables + RPC + cron | D-420 REMOVE | planned |
-| 0.3 | Drop booking pipeline UI (keep tables) | D-224 REMOVE / D-421 DORMANT | planned |
-| 0.4 | Unmount CP routes (keep tables) | D-221 DORMANT | planned |
-| 0.5 | Drop PSCRM + Legal Auditor sister-product hooks | D-442 / D-443 REPACKAGE | planned |
-| 0.6 | Drop source-specific connector backlog from docs | D-117 DEFER | planned |
-| 0.7 | Fix broken links (`/admin/support/new`, `/dashboard/site-visits`) | — | planned |
-| 0.8 | Rename "Directives" → "AI Workflows" (UI only) | D-017 REPACKAGE | planned |
-| 0.9 | Swap sidebar "Voice IQ" → "App Access" | **D-613** | planned |
-| 0.10 | Update demo seeder to V6 scope | D-225 REPACKAGE | planned |
+| 0.1 | Drop catalog UI + unreferenced tables | D-223 / D-320 REMOVE | **shipped** (`f2ce9aa`) |
+| 0.2 | Drop inventory UI + tables + RPC + cron | D-420 REMOVE | **shipped** (`8880a64`) |
+| 0.3 | Drop booking pipeline UI (keep tables) | D-224 REMOVE / D-421 DORMANT | **shipped** (`f371611`) |
+| 0.4 | Unmount CP routes (keep tables) | D-221 DORMANT | **shipped** (`4b988a1`) |
+| 0.5 | Drop PSCRM + Legal Auditor sister-product hooks | D-442 / D-443 REPACKAGE | **shipped** (`0326b35`) |
+| 0.6 | Drop source-specific connector backlog from docs | D-117 DEFER | **shipped** (`e1c33a0`) |
+| 0.7 | Fix broken links (`/admin/support/new`, `/dashboard/site-visits`) | — | **shipped** (`149e852`) |
+| 0.8 | Rename "Directives" → "AI Workflows" (UI only) | D-017 REPACKAGE | **shipped** (`16ac00e`) |
+| 0.9 | Swap sidebar "Voice IQ" → "App Access" | **D-613** | **shipped** (`0883db2`) |
+| 0.10 | Update demo seeder to V6 scope | D-225 REPACKAGE | **shipped** (`f69d23b`) |
 
-**Gate 0:** App builds clean. Zero references to dropped features. All existing tests pass minus the removed ~150. Demo seed produces a V6-shaped org.
+All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each its own commit. Test alignment for the stabilization changes: `f3768c3`.
+
+**Gate 0 — status (2026-05-14):**
+- ✅ **Builds clean** — `npm run build` exit 0 on the `v6-stabilization` tip.
+- ✅ **Zero references to dropped features** — `grep` sweep across `src/` + `tests/` clean (catalog/inventory libs, post-sales handlers, deal-stage-tracker, booking_pipeline widget, removed perm literals, `/admin/catalog` + `/admin/inventory` links).
+- ✅ **Tests green** — `npx vitest run` → 1743/1743 (186 files). The 4 failures the full run first surfaced were assertions on pre-V6 state (sidebar Inventory entry, `SISTER_PRODUCT_KINDS`, the directives "not found" message); realigned in `f3768c3`.
+- ✅ **Typecheck** — `npx tsc --noEmit`: 9 pre-existing `tests/e2e/` errors (strict-null + one Deno-style URL import — unrelated to Phase 0), **0 new, 0 in `src/`**.
+- ⏳ **Phase-0 migration applied to Supabase** — `supabase/migrations/20260514120000_v6_narrow_sister_product_kind.sql` is authored + committed; **DB application pending** — it is a destructive `DELETE` of pre-V6 sister-product tokens + a CHECK-constraint swap, and needs `DATABASE_URL`. Apply from the repo root: `node scripts/apply_migration.mjs supabase/migrations/20260514120000_v6_narrow_sister_product_kind.sql`.
+- ⏳ **Demo seed run** — `scripts/demo/seed.ts` is V6-shaped (verified by review + tsc); a live run needs `SUPABASE_*` env.
 
 ## 2. Phase 1 — Core comms + lead intake
 
@@ -126,7 +134,7 @@ All additive (implementation-order §6 + PRD §4 data models). None applied yet 
 | `20260520120900_super_admin_impersonation_log.sql` | D-606 | `super_admin_impersonation_log` + `platform_defects`; `organizations.feature_flags` | pending |
 | _(D-600)_ | D-600 | `agent_approval_queue` extended: `kind`, `attachments`, `error` | pending |
 
-**Phase 0 migration note:** implementation-order §5.5 narrows `product_kind` to `('marketing_intelligence_hub')` only — a Phase-0 enum migration (rename old + recreate + value remap). Catalog/inventory/booking-pipeline migrations are **not** dropped — marked obsolete here, tables retained for the revival path.
+**Phase 0 migration — `20260514120000_v6_narrow_sister_product_kind.sql`** (D-442 / D-443, step 0.5): narrows `org_sister_product_tokens.product_kind` to `marketing_intelligence_hub` only. Implementation-order §5.5 wrote this as an `ALTER TYPE` enum migration, but `product_kind` is a `text` column with a CHECK constraint (D-440), so the migration is a DROP/ADD CONSTRAINT + a forward-only `DELETE` of pre-V6 token rows. **Status: authored + committed, DB application pending** (destructive — needs `DATABASE_URL`; apply via `scripts/apply_migration.mjs`). Catalog / inventory / booking-pipeline migrations from V0–V5 are **not** dropped — tables + RPCs retained for the revival path, marked obsolete in their directive docs.
 
 ---
 
@@ -134,11 +142,13 @@ All additive (implementation-order §6 + PRD §4 data models). None applied yet 
 
 ```
 v5 baseline entering v6:    ~1675 unit tests (full vitest run as of v5@a6e5f44)
-v6 Phase 0:                 ~ -150 tests (catalog + inventory + booking pipeline removals)
+v6 Phase 0 (shipped):       1743 tests / 186 files green — catalog + inventory +
+                            booking-pipeline + post-sales suites removed;
+                            sidebar / token / directives suites realigned
 v6 Phase 1:                 ~ +120 unit + 4 integration + 2 E2E (target)
 v6 Phase 2:                 ~ +150 unit + 6 integration + 4 E2E (target)
 v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 ~1675 (no V6 directive shipped yet)
+v6 current:                 1743 unit tests green (Phase 0 complete)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.
@@ -147,7 +157,7 @@ New test suites required (implementation-order §7): `brochure-agent`, `site-vis
 
 ## 10. Sign-off checklist for V6.0 launch (implementation-order §11)
 
-- [ ] Phase 0 stabilization merged to `v6` (~Week 1)
+- [x] Phase 0 stabilization merged to `v6` (2026-05-14) — 10 steps + test alignment; Gate 0 build / tsc / vitest / grep all green. Migration apply + demo-seed run pending (DB-side, see §1).
 - [ ] Phase 1 Gate 1 acceptance complete (~Week 3)
 - [ ] Phase 2 Gate 2 acceptance complete (~Week 6)
 - [ ] Phase 3 Gate 3 acceptance complete (~Week 9)
