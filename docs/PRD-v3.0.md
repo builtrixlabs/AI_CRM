@@ -51,6 +51,9 @@ V0 unchanged (D-001 → D-015).
 
 # Builtrix AI-Native CRM — Product Requirements Document v3.0
 
+> **⚠️ ARCHIVED (2026-05-14) — superseded on scope by [`docs/PRD-v6.0.md`](./PRD-v6.0.md).**
+> Retained as the **V0–V5 source of truth**: V0/V2/V3/V4/V5 directives, schemas, and shipped scope trace back here, and `docs/V5_STATUS.md` still references it. It is **no longer the active scope authority.** V6 narrows scope to presales + sales engagement — the booking pipeline, RE inventory, catalog, demand letters, and source-specific lead connectors described below are REMOVED / DEFERRED / DORMANT in V6 (see [`docs/plans/v6-implementation-order.md`](./plans/v6-implementation-order.md) §2 + §9). Constitution v2.0 remains binding. Do not plan new work against this document — use the V6 docs.
+
 **Product:** Builtrix CRM — AI-native real-estate sales & post-sales workforce
 **Stack OS:** Vibe Coding OS V5
 **Version:** PRD v3.0 (Priority Curation — supersedes v2.0 on directives D-110 onward)
