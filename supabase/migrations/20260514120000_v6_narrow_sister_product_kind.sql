@@ -19,8 +19,9 @@
 --     ADD CONSTRAINT org_sister_product_tokens_product_kind_check
 --     CHECK (product_kind IN ('post_sales_crm','lead_sources','legal_auditor'));
 --   -- (deleted pre-V6 token rows are not restored — forward-only delete.)
-
-BEGIN;
+--
+-- Transaction control: apply_migration.mjs already wraps this file in its
+-- own BEGIN/COMMIT, so this file does not open its own transaction.
 
 -- 1. Drop the existing CHECK constraint. D-440 created it as an inline
 --    column constraint, so the name was auto-generated — resolve it
@@ -52,7 +53,5 @@ DELETE FROM public.org_sister_product_tokens
 ALTER TABLE public.org_sister_product_tokens
   ADD CONSTRAINT org_sister_product_tokens_product_kind_check
   CHECK (product_kind IN ('marketing_intelligence_hub'));
-
-COMMIT;
 
 NOTIFY pgrst, 'reload schema';
