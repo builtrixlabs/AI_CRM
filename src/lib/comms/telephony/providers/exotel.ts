@@ -84,8 +84,10 @@ export class ExotelTelephonyProvider implements TelephonyAdapter {
     if (!args.to_phone_e164) {
       throw new CommsError("missing to_phone_e164", "invalid_args");
     }
+    // D-609 — bridge the rep's phone to the customer when from_phone_e164
+    // is supplied; fall back to the virtual number (pre-D-609 behavior).
     const body = new URLSearchParams();
-    body.set("From", this.cfg.virtual_number);
+    body.set("From", args.from_phone_e164 ?? this.cfg.virtual_number);
     body.set("To", args.to_phone_e164);
     body.set("CallerId", this.cfg.virtual_number);
     body.set("CallType", "trans");

@@ -35,6 +35,13 @@ export type OutboundCallArgs = {
   workspace_id: string;
   from_user_id: string;
   to_phone_e164: string;
+  /**
+   * D-609 — the rep's own phone (profiles.phone). When set, the adapter
+   * dials the rep first and bridges to the customer ("both phones ring").
+   * Omitted → the adapter falls back to the org's virtual number for the
+   * `From` leg (the pre-D-609 behavior).
+   */
+  from_phone_e164?: string;
   lead_id?: string;
   deal_id?: string;
 };
