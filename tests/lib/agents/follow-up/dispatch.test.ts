@@ -32,7 +32,56 @@ type Opts = {
   queue?: QueueRow;
   lead?: LeadRow;
   insertActivityError?: string;
+  emailConfig?: Record<string, unknown>;
+  smsConfig?: Record<string, unknown>;
+  whatsappConfig?: Record<string, unknown>;
 };
+
+// org_{channel}_config rows for resolveOrgAdapter. provider:"mock" resolves
+// to the in-memory mock adapter; the whatsapp row carries the raw `active`
+// column (resolveOrgAdapter maps it to is_active).
+function emailConfig(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    organization_id: ORG,
+    provider: "mock",
+    encrypted_credentials: { ciphertext: "mock" },
+    from_email: null,
+    from_name: null,
+    is_active: true,
+    ...over,
+  };
+}
+
+function smsConfig(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    organization_id: ORG,
+    provider: "mock",
+    encrypted_credentials: { ciphertext: "mock" },
+    sender_id: null,
+    dlt_entity_id: null,
+    is_active: true,
+    ...over,
+  };
+}
+
+function whatsappConfig(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    organization_id: ORG,
+    provider: "mock",
+    encrypted_credentials: { ciphertext: "mock" },
+    from_phone_number_id: null,
+    from_display_number: null,
+    approved_template_ids: ["follow_up_default"],
+    active: true,
+    ...over,
+  };
+}
 
 function row(over: Partial<QueueRow> = {}): QueueRow {
   return {
@@ -66,6 +115,26 @@ function makeClient(opts: Opts) {
     payload: Record<string, unknown>;
     filter: Record<string, unknown>;
   }> = [];
+
+  function configHandler(cfgRow: Record<string, unknown> | undefined) {
+    return {
+      select: () => {
+        const filters: Record<string, unknown> = {};
+        const chain: Record<string, unknown> = {};
+        chain.eq = (k: string, v: unknown) => {
+          filters[k] = v;
+          return chain;
+        };
+        chain.maybeSingle = () => {
+          if (!cfgRow) return Promise.resolve({ data: null, error: null });
+          if (filters.organization_id !== cfgRow.organization_id)
+            return Promise.resolve({ data: null, error: null });
+          return Promise.resolve({ data: cfgRow, error: null });
+        };
+        return chain;
+      },
+    };
+  }
 
   function fromHandler(table: string) {
     if (table === "agent_approval_queue") {
@@ -157,6 +226,10 @@ function makeClient(opts: Opts) {
         },
       };
     }
+    if (table === "org_email_config") return configHandler(opts.emailConfig);
+    if (table === "org_sms_config") return configHandler(opts.smsConfig);
+    if (table === "org_whatsapp_endpoints")
+      return configHandler(opts.whatsappConfig);
     throw new Error(`unhandled table: ${table}`);
   }
   return {
@@ -176,6 +249,7 @@ describe("dispatchApprovedDraft — email", () => {
     const m = makeClient({
       queue: row({ channel: "email" }),
       lead: lead({ email: "buyer@example.com" }),
+      emailConfig: emailConfig(),
     });
     const r = await dispatchApprovedDraft(
       { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
@@ -229,13 +303,77 @@ describe("dispatchApprovedDraft — email", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("missing_recipient");
   });
+
+  it("no email config → not_configured + deferred audit, row stays approved", async () => {
+    const m = makeClient({
+      queue: row({ channel: "email" }),
+      lead: lead({ email: "buyer@example.com" }),
+      // no emailConfig — org has not set up email
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("not_configured");
+      expect(r.message).toBe("email");
+    }
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+    // row stays approved — no transition to sent
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("unsupported email provider → provider_error + send_error recorded", async () => {
+    const m = makeClient({
+      queue: row({ channel: "email" }),
+      lead: lead({ email: "buyer@example.com" }),
+      emailConfig: emailConfig({ provider: "postmark" }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("provider_error");
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          typeof (u.payload as Record<string, unknown>).send_error ===
+            "string",
+      ),
+    ).toBeTruthy();
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_failed",
+      ),
+    ).toBeTruthy();
+  });
 });
 
 describe("dispatchApprovedDraft — sms", () => {
-  it("happy path: DLT template auto-registered + send recorded", async () => {
+  it("happy path: templated send via resolved adapter, send recorded", async () => {
     const m = makeClient({
       queue: row({ channel: "sms" }),
       lead: lead({ phone: "+919900011111" }),
+      smsConfig: smsConfig(),
     });
     const r = await dispatchApprovedDraft(
       { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
@@ -243,6 +381,7 @@ describe("dispatchApprovedDraft — sms", () => {
     );
     expect(r.ok).toBe(true);
     if (r.ok && !("already_sent" in r)) {
+      expect(r.provider).toBe("mock");
       expect(r.provider_message_id).toMatch(/^mock-sms-/);
     }
   });
@@ -259,13 +398,108 @@ describe("dispatchApprovedDraft — sms", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("missing_recipient");
   });
+
+  it("no sms config → not_configured + deferred audit, row stays approved", async () => {
+    const m = makeClient({
+      queue: row({ channel: "sms" }),
+      lead: lead({ phone: "+919900011111" }),
+      // no smsConfig
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("not_configured");
+      expect(r.message).toBe("sms");
+    }
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("unsupported sms provider → provider_error + send_error recorded", async () => {
+    const m = makeClient({
+      queue: row({ channel: "sms" }),
+      lead: lead({ phone: "+919900011111" }),
+      smsConfig: smsConfig({ provider: "gupshup" }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("provider_error");
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          typeof (u.payload as Record<string, unknown>).send_error ===
+            "string",
+      ),
+    ).toBeTruthy();
+  });
 });
 
-describe("dispatchApprovedDraft — whatsapp deferred", () => {
-  it("returns not_configured cleanly + writes deferred audit", async () => {
+describe("dispatchApprovedDraft — whatsapp", () => {
+  it("happy path: resolves adapter + templated send, approved → sent", async () => {
     const m = makeClient({
       queue: row({ channel: "whatsapp" }),
-      lead: lead(),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && !("already_sent" in r)) {
+      expect(r.status).toBe("sent");
+      expect(r.provider).toBe("mock");
+      expect(r.provider_message_id).toMatch(/^mock-wa-/);
+    }
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeTruthy();
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "nodes" &&
+          (i.payload as Record<string, unknown>).node_type === "activity",
+      ),
+    ).toBeTruthy();
+    expect(m.inserts.find((i) => i.table === "edges")).toBeTruthy();
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action === "agent_draft_sent",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("no whatsapp config → not_configured + deferred audit, row stays approved", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      // no whatsappConfig
     });
     const r = await dispatchApprovedDraft(
       { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
@@ -284,12 +518,81 @@ describe("dispatchApprovedDraft — whatsapp deferred", () => {
             "agent_draft_send_deferred",
       ),
     ).toBeTruthy();
-    // No status update — row stays approved
     expect(
       m.updates.find(
         (u) =>
           u.table === "agent_approval_queue" &&
           (u.payload as Record<string, unknown>).status === "sent",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("inactive whatsapp endpoint (active=false) → not_configured + deferred", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig({ active: false }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("not_configured");
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("missing phone on lead → missing_recipient", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: undefined, email: "x@y.com" }),
+      whatsappConfig: whatsappConfig(),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("missing_recipient");
+  });
+
+  it("follow-up template not approved → template_not_found routes to deferred", async () => {
+    const m = makeClient({
+      queue: row({ channel: "whatsapp" }),
+      lead: lead({ phone: "+919900011111" }),
+      whatsappConfig: whatsappConfig({ approved_template_ids: [] }),
+    });
+    const r = await dispatchApprovedDraft(
+      { queue_id: QUEUE_ID, organization_id: ORG, actor_id: ACTOR },
+      m.client,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("not_configured");
+      expect(r.message).toBe("whatsapp");
+    }
+    expect(
+      m.inserts.find(
+        (i) =>
+          i.table === "audit_log" &&
+          (i.payload as Record<string, unknown>).action ===
+            "agent_draft_send_deferred",
+      ),
+    ).toBeTruthy();
+    // template_not_found is a setup gap, not a send failure — no send_error
+    expect(
+      m.updates.find(
+        (u) =>
+          u.table === "agent_approval_queue" &&
+          typeof (u.payload as Record<string, unknown>).send_error ===
+            "string",
       ),
     ).toBeUndefined();
   });

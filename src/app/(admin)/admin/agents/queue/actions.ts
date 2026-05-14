@@ -8,7 +8,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { dispatchApprovedDraft } from "@/lib/agents/follow-up/dispatch";
 
 export type QueueActionResult =
-  | { ok: true; dispatch?: "sent" | "deferred" }
+  | { ok: true; dispatch?: "sent" }
+  | { ok: true; dispatch: "deferred"; channel: "email" | "sms" | "whatsapp" }
   | {
       ok: false;
       error: "permission" | "not_found" | "validation" | "internal";
@@ -120,9 +121,17 @@ export async function approveQueueItemAction(
     return { ok: true, dispatch: "sent" };
   }
   if (dispatchResult.reason === "not_configured") {
-    // WhatsApp falls through here today — approval succeeded, send is deferred
-    // to the operator's manual channel surfaces until BSP wiring lands.
-    return { ok: true, dispatch: "deferred" };
+    // Approval succeeded; the org has not configured (or not finished
+    // configuring) this channel. dispatch.ts sets `message` to the channel
+    // name so the queue UI can point the operator at /admin/integrations.
+    return {
+      ok: true,
+      dispatch: "deferred",
+      channel: (dispatchResult.message ?? "email") as
+        | "email"
+        | "sms"
+        | "whatsapp",
+    };
   }
   // Approval succeeded in DB but dispatch failed. Surface so the UI can
   // show the error; the row is still 'approved' and operator can retry.

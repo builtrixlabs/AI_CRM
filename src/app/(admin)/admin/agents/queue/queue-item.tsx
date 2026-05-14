@@ -12,18 +12,23 @@ export type QueueItemRow = {
   id: string;
   lead_id: string;
   lead_label: string;
-  channel: "whatsapp" | "email";
+  channel: "whatsapp" | "email" | "sms";
   draft_body: string;
   agent_kind: string;
   created_at: string;
 };
+
+type DoneState =
+  | { kind: "approved" }
+  | { kind: "deferred"; channel: "email" | "sms" | "whatsapp" }
+  | { kind: "rejected" };
 
 export function QueueItem({ item }: { item: QueueItemRow }) {
   const [body, setBody] = useState(item.draft_body);
   const [reason, setReason] = useState("");
   const [pending, startTransition] = useTransition();
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState<"approved" | "rejected" | null>(null);
+  const [done, setDone] = useState<DoneState | null>(null);
 
   const dirty = body.trim() !== item.draft_body.trim();
 
@@ -35,7 +40,11 @@ export function QueueItem({ item }: { item: QueueItemRow }) {
         setErr(r.message ?? r.error);
         return;
       }
-      setDone("approved");
+      setDone(
+        r.dispatch === "deferred"
+          ? { kind: "deferred", channel: r.channel }
+          : { kind: "approved" },
+      );
     });
   }
 
@@ -51,14 +60,28 @@ export function QueueItem({ item }: { item: QueueItemRow }) {
         setErr(r.message ?? r.error);
         return;
       }
-      setDone("rejected");
+      setDone({ kind: "rejected" });
     });
   }
 
   if (done) {
+    if (done.kind === "deferred") {
+      return (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          Approved — but not sent. Configure your {done.channel} integration
+          to send this draft.{" "}
+          <Link
+            href={`/admin/integrations/${done.channel}`}
+            className="font-medium underline"
+          >
+            Open {done.channel} integration settings
+          </Link>
+        </div>
+      );
+    }
     return (
       <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600">
-        {done === "approved" ? "Approved." : "Rejected."}
+        {done.kind === "approved" ? "Approved." : "Rejected."}
       </div>
     );
   }

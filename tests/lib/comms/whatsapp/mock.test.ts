@@ -1,48 +1,42 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { MockSmsProvider } from "@/lib/comms/sms/providers/mock";
+import { describe, expect, it } from "vitest";
+import { MockWhatsAppProvider } from "@/lib/comms/whatsapp/providers/mock";
 import { CommsError } from "@/lib/comms/types";
 
-let p: MockSmsProvider;
-beforeEach(() => {
-  p = new MockSmsProvider();
-  p.reset();
-});
-
-describe("MockSmsProvider", () => {
-  it("registered template sends + records to outbox", async () => {
-    p.registerTemplate("welcome_dlt_42");
+describe("MockWhatsAppProvider", () => {
+  it("approved template sends + records to outbox", async () => {
+    const p = new MockWhatsAppProvider();
+    p.approveTemplate("welcome_v3");
     const r = await p.send({
-      kind: "templated",
+      kind: "template",
       organization_id: "org-1",
-      template_id: "welcome_dlt_42",
+      template_id: "welcome_v3",
       to_phone_e164: "+919900011111",
       data: { name: "Patel" },
     });
-    expect(r.provider_message_id).toMatch(/^mock-sms-/);
-    expect(r.template_id).toBe("welcome_dlt_42");
+    expect(r.provider_message_id).toMatch(/^mock-wa-/);
+    expect(r.template_id).toBe("welcome_v3");
     expect(p.getOutbox()).toHaveLength(1);
   });
 
-  it("rejects unregistered DLT template with template_not_found", async () => {
+  it("rejects unapproved template with template_not_found", async () => {
+    const p = new MockWhatsAppProvider();
     await expect(
       p.send({
-        kind: "templated",
+        kind: "template",
         organization_id: "org-1",
-        template_id: "not_registered",
+        template_id: "not_approved",
         to_phone_e164: "+919900011111",
         data: {},
       }),
-    ).rejects.toMatchObject({
-      name: "CommsError",
-      kind: "template_not_found",
-    });
+    ).rejects.toMatchObject({ name: "CommsError", kind: "template_not_found" });
   });
 
   it("rejects missing recipient", async () => {
-    p.registerTemplate("t1");
+    const p = new MockWhatsAppProvider();
+    p.approveTemplate("t1");
     await expect(
       p.send({
-        kind: "templated",
+        kind: "template",
         organization_id: "org-1",
         template_id: "t1",
         to_phone_e164: "",
@@ -51,10 +45,10 @@ describe("MockSmsProvider", () => {
     ).rejects.toBeInstanceOf(CommsError);
   });
 
-  it("seed constructor pre-fills the DLT registry without registerTemplate", async () => {
-    const seeded = new MockSmsProvider(new Set(["follow_up_default"]));
+  it("seed constructor pre-fills the approved-template registry", async () => {
+    const seeded = new MockWhatsAppProvider(new Set(["follow_up_default"]));
     const r = await seeded.send({
-      kind: "templated",
+      kind: "template",
       organization_id: "org-1",
       template_id: "follow_up_default",
       to_phone_e164: "+919900011111",
@@ -65,10 +59,10 @@ describe("MockSmsProvider", () => {
   });
 
   it("no-arg constructor still starts with an empty registry", async () => {
-    const empty = new MockSmsProvider();
+    const empty = new MockWhatsAppProvider();
     await expect(
       empty.send({
-        kind: "templated",
+        kind: "template",
         organization_id: "org-1",
         template_id: "follow_up_default",
         to_phone_e164: "+919900011111",
