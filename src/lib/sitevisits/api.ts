@@ -2,11 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createNode } from "@/lib/nodes/api";
 import { siteVisitSchema } from "@/lib/nodes/schemas/site_visit";
-import {
-  TERMINAL_STATES,
-  assertTransitionAllowed,
-  type SiteVisitState,
-} from "./transitions";
+import { assertTransitionAllowed, type SiteVisitState } from "./transitions";
 
 const UUID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -87,10 +83,12 @@ export async function transitionSiteVisit(
   if (!UUID_RE.test(args.id)) {
     throw new Error(`Malformed site_visit id: ${args.id}`);
   }
-  if (TERMINAL_STATES.has(args.target_state)) {
-    if (args.target_state === "no_show" && (!args.reason || !args.reason.trim())) {
-      throw new Error("Reason required for no_show transition");
-    }
+  // D-602 — no_show and cancelled are both reason-required terminals.
+  if (
+    (args.target_state === "no_show" || args.target_state === "cancelled") &&
+    (!args.reason || !args.reason.trim())
+  ) {
+    throw new Error(`Reason required for ${args.target_state} transition`);
   }
 
   const lookup = await client

@@ -296,6 +296,33 @@ export default async function AdminCockpitPage(props: {
               </Link>
             </CardContent>
           </Card>
+
+          {/* D-608 — project ↔ sales-rep mapping. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Projects</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Link href="/admin/projects" className="text-sm underline">
+                Project sales teams →
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* D-610 — pre-sales auto-allocation rules. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Lead allocation</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Link
+                href="/admin/allocation-rules"
+                className="text-sm underline"
+              >
+                Allocation rules →
+              </Link>
+            </CardContent>
+          </Card>
         </div>
       </section>
 

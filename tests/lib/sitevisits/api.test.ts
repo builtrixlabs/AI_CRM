@@ -229,3 +229,76 @@ describe("findUpcomingSiteVisits", () => {
     expect(out).toEqual([]);
   });
 });
+
+// D-602 (V6 Phase 1) — the 7-state machine adds `in_progress` and makes
+// `cancelled` a reason-required terminal alongside `no_show`.
+describe("transitionSiteVisit — D-602 7-state machine", () => {
+  it("requires a reason for the cancelled transition", async () => {
+    const { client } = makeClient({});
+    await expect(
+      transitionSiteVisit(
+        {
+          id: VISIT,
+          target_state: "cancelled",
+          actor: "u-1",
+          caller_org_id: ORG,
+        },
+        client as never
+      )
+    ).rejects.toThrow(/Reason required for cancelled/);
+  });
+
+  it("allows scheduled → in_progress and writes the audit row", async () => {
+    const { client, inserts } = makeClient({
+      visit_row: { state: "scheduled", organization_id: ORG, workspace_id: WS },
+    });
+    await transitionSiteVisit(
+      {
+        id: VISIT,
+        target_state: "in_progress",
+        actor: "u-1",
+        caller_org_id: ORG,
+      },
+      client as never
+    );
+    expect(inserts.audit).toHaveLength(1);
+    const row = inserts.audit[0] as { diff: { from: string; to: string } };
+    expect(row.diff.from).toBe("scheduled");
+    expect(row.diff.to).toBe("in_progress");
+  });
+
+  it("allows scheduled → cancelled with a reason and records it", async () => {
+    const { client, inserts } = makeClient({
+      visit_row: { state: "scheduled", organization_id: ORG, workspace_id: WS },
+    });
+    await transitionSiteVisit(
+      {
+        id: VISIT,
+        target_state: "cancelled",
+        actor: "u-1",
+        caller_org_id: ORG,
+        reason: "customer postponed indefinitely",
+      },
+      client as never
+    );
+    const row = inserts.audit[0] as { diff: { reason: string } };
+    expect(row.diff.reason).toBe("customer postponed indefinitely");
+  });
+
+  it("rejects an illegal transition (completed → scheduled)", async () => {
+    const { client } = makeClient({
+      visit_row: { state: "completed", organization_id: ORG, workspace_id: WS },
+    });
+    await expect(
+      transitionSiteVisit(
+        {
+          id: VISIT,
+          target_state: "scheduled",
+          actor: "u-1",
+          caller_org_id: ORG,
+        },
+        client as never
+      )
+    ).rejects.toThrow();
+  });
+});

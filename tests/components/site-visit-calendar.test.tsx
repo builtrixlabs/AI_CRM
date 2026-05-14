@@ -8,18 +8,18 @@ function makeDay(
   date: string,
   overrides: Partial<CalendarDay["by_state"]> = {}
 ): CalendarDay {
+  // D-602 — 7-state buckets (baseline/110 §III amendment).
   const by_state = {
+    draft: 0,
     scheduled: 0,
     confirmed: 0,
+    in_progress: 0,
     completed: 0,
+    cancelled: 0,
     no_show: 0,
     ...overrides,
   };
-  const total =
-    by_state.scheduled +
-    by_state.confirmed +
-    by_state.completed +
-    by_state.no_show;
+  const total = Object.values(by_state).reduce((s, n) => s + n, 0);
   return {
     date,
     date_utc: `${date}T00:00:00.000Z`,

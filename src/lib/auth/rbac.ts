@@ -91,6 +91,15 @@ export const PERMISSIONS = [
   "site_visits:create",
   "site_visits:edit",
   "site_visits:cancel",
+  // D-602 (V6 Phase 1) — coordinator dashboard + sales-rep assignment.
+  "site_visits:coordinate",
+  "site_visits:assign",
+
+  // ── Projects (D-608) ────────────────────────────────────────────────────
+  "projects:assign_sales",
+
+  // ── Lead allocation (D-610) ─────────────────────────────────────────────
+  "allocation_rules:manage",
 
   // ── Documents / notes ───────────────────────────────────────────────────
   "documents:view",
@@ -172,6 +181,12 @@ const MANAGER_OPERATIONAL: Permission[] = [
   "calls:listen",
   "calls:export",
   "audit:view",
+  // D-602 — managers assign sales reps to site visits.
+  "site_visits:assign",
+  // D-608 — managers map sales reps to projects.
+  "projects:assign_sales",
+  // D-610 — managers configure lead-allocation rules.
+  "allocation_rules:manage",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -216,6 +231,14 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
+  // D-602 (V6 Phase 1) — org admin oversees the site-visit module.
+  "site_visits:view",
+  "site_visits:coordinate",
+  "site_visits:assign",
+  // D-608 — org admin oversees project <-> sales-rep mapping.
+  "projects:assign_sales",
+  // D-610 — org admin oversees lead-allocation rules.
+  "allocation_rules:manage",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [
@@ -244,6 +267,33 @@ const CHANNEL_PARTNER_PERMS: Permission[] = [
   "cp:view_commissions",
 ];
 
+// ── V6 role permission sets (D-602, implementation-order §6) ───────────────
+
+// presales_rep / telemarketing_rep / customer_recovery_rep are all
+// phone-first rep roles — the sales_rep operational surface plus call
+// listening. Their dedicated dashboards/queues land in D-605 / D-610 /
+// D-616; D-602 only needs the enum values usable so effectivePermissions
+// never resolves an undefined set.
+const PHONE_REP_OPERATIONAL: Permission[] = [
+  ...SALES_REP_OPERATIONAL,
+  "calls:listen",
+];
+
+// site_visit_coordinator owns cab logistics — a focused read surface plus
+// the site-visit coordinate / assign / edit perms. No lead/deal write.
+const SITE_VISIT_COORDINATOR_OPERATIONAL: Permission[] = [
+  "leads:view",
+  "contacts:view",
+  "activities:view",
+  "calls:view",
+  "site_visits:view",
+  "site_visits:edit",
+  "site_visits:coordinate",
+  "site_visits:assign",
+  "notes:view",
+  "notes:create",
+];
+
 // ── Maps ───────────────────────────────────────────────────────────────────
 
 export const BASE_ROLE_PERMS: Record<BaseRole, ReadonlySet<Permission>> = {
@@ -256,6 +306,11 @@ export const BASE_ROLE_PERMS: Record<BaseRole, ReadonlySet<Permission>> = {
   read_only: new Set(READ_ONLY_OPERATIONAL),
   channel_partner: new Set(CHANNEL_PARTNER_PERMS),
   service_account: new Set<Permission>(),
+  // D-602 (V6 Phase 1) — implementation-order §6 role extension.
+  presales_rep: new Set(PHONE_REP_OPERATIONAL),
+  telemarketing_rep: new Set(PHONE_REP_OPERATIONAL),
+  customer_recovery_rep: new Set(PHONE_REP_OPERATIONAL),
+  site_visit_coordinator: new Set(SITE_VISIT_COORDINATOR_OPERATIONAL),
 };
 
 export const APP_ROLE_PERMS: Record<AppRole, ReadonlySet<Permission>> = {
