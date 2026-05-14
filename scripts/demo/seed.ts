@@ -1,9 +1,14 @@
 /* eslint-disable no-console */
 /**
  * Demo data seeder — creates "Skyline Realty Pvt Ltd" with enough data to
- * light up every v2 surface (cockpit compliance, catalog browser,
- * site-visit calendar, booking pipeline widget, CP submissions, Voice IQ
- * delivery log, platform tickets).
+ * light up the V6 surfaces (cockpit compliance, leads, deals, site-visit
+ * calendar, Voice IQ delivery log, platform tickets).
+ *
+ * V6 (implementation-order §4 step 0.10): catalog (property/unit) and
+ * booking-pipeline seeding are stripped — those modules are removed in
+ * Phase 0. A single `project` node is seeded for the D-608 project <->
+ * sales-person mapping (Phase 1). CP-sourced demo leads are dropped (the
+ * channel-partner portal is dormant in V6).
  *
  * Idempotent: stable UUIDs derived from a fixed seed string. Re-running
  * upserts existing rows; counts shown as "skipped".
@@ -152,66 +157,34 @@ async function upsertNode(
   counts.created += 1;
 }
 
-async function seedProperty(
+async function seedProject(
   client: ReturnType<typeof createClient>,
   org_id: string,
   ws_id: string,
   counts: Counts,
 ) {
-  const propId = id("property.skyline");
+  // V6: a single `project` node. The D-608 project <-> sales-person
+  // mapping (Phase 1) maps sales reps to projects. Catalog property/unit
+  // seeding is stripped in Phase 0 (implementation-order §4 step 0.10);
+  // the project node_type is retained on the revival path.
   await upsertNode(
     client,
     {
-      id: propId,
+      id: id("project.demo"),
       organization_id: org_id,
       workspace_id: ws_id,
-      node_type: "property",
-      label: "Skyline Towers",
-      state: "available",
+      node_type: "project",
+      label: "Skyline Towers — Phase 1",
+      state: null,
       data: {
-        name: "Skyline Towers",
+        name: "Skyline Towers — Phase 1",
         city: "Bengaluru",
         rera_number: RERA,
-        unit_count: 30,
-        address: "Outer Ring Road, Sarjapur, Bengaluru — 560035",
+        locality: "Sarjapur, Outer Ring Road",
       },
     },
     counts,
   );
-
-  // 30 units across statuses
-  const unitStates: Array<"available" | "held" | "booked" | "sold"> = [];
-  for (let i = 0; i < 18; i++) unitStates.push("available");
-  for (let i = 0; i < 4; i++) unitStates.push("held");
-  for (let i = 0; i < 5; i++) unitStates.push("booked");
-  for (let i = 0; i < 3; i++) unitStates.push("sold");
-
-  for (let i = 0; i < unitStates.length; i++) {
-    const tower = i < 10 ? "A" : i < 20 ? "B" : "C";
-    const floor = (i % 10) + 1;
-    const bhk = i % 3 === 0 ? 2 : i % 3 === 1 ? 3 : 4;
-    const price = bhk === 2 ? 5_500_000 : bhk === 3 ? 8_000_000 : 12_000_000;
-    await upsertNode(
-      client,
-      {
-        id: id(`unit.${i}`),
-        organization_id: org_id,
-        workspace_id: ws_id,
-        node_type: "unit",
-        label: `${tower}-${floor}0${(i % 10) + 1}`,
-        state: unitStates[i],
-        data: {
-          property_id: propId,
-          unit_no: `${tower}-${floor}0${(i % 10) + 1}`,
-          bhk,
-          floor,
-          price,
-          carpet_area_sqft: bhk === 2 ? 1100 : bhk === 3 ? 1450 : 1850,
-        },
-      },
-      counts,
-    );
-  }
 }
 
 async function seedLeads(
@@ -255,16 +228,10 @@ async function seedLeads(
         state: states[i],
         data: {
           phone,
-          source: i % 5 === 0 ? "channel_partner" : i % 4 === 0 ? "facebook" : "magicbricks",
+          source: i % 4 === 0 ? "meta_lead_ads" : "magicbricks",
+          source_channel: i % 4 === 0 ? "paid_social" : "aggregator",
           intent_score: i * 5 % 100,
-          custom: i % 5 === 0
-            ? {
-                cp_submitted_by: SYSTEM_UUID,
-                cp_status: "pending",
-                source_property: "Skyline Towers Phase 1",
-                expected_budget: "₹70L–₹90L",
-              }
-            : {},
+          custom: {},
         },
       },
       counts,
@@ -300,7 +267,6 @@ async function seedDeals(
         label: `Deal #${i + 1}`,
         state: stages[i],
         data: {
-          unit_id: id(`unit.${i}`),
           lead_id: id(`lead.${i + 7}`), // qualified leads
           expected_close_amount: 7_000_000 + i * 200_000,
         },
@@ -338,7 +304,7 @@ async function seedSiteVisits(
         state: visits[i].state,
         data: {
           lead_id: id(`lead.${i + 7}`),
-          property_id: id("property.skyline"),
+          project_id: id("project.demo"),
           scheduled_at: isoOffset(visits[i].day, 11 + (i % 4) * 2),
         },
       },
@@ -455,7 +421,7 @@ export async function runSeed(): Promise<void> {
 
   const orgId = await upsertOrg(client, counts);
   const wsId = await upsertWorkspace(client, orgId, counts);
-  await seedProperty(client, orgId, wsId, counts);
+  await seedProject(client, orgId, wsId, counts);
   await seedLeads(client, orgId, wsId, counts);
   await seedDeals(client, orgId, wsId, counts);
   await seedSiteVisits(client, orgId, wsId, counts);
