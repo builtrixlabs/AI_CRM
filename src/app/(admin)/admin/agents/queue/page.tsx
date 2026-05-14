@@ -55,7 +55,12 @@ export default async function AgentQueuePage() {
     id: r.id,
     lead_id: r.lead_id,
     lead_label: labelById.get(r.lead_id) ?? "(lead)",
-    channel: r.channel === "whatsapp" ? "whatsapp" : "email",
+    channel:
+      r.channel === "whatsapp"
+        ? "whatsapp"
+        : r.channel === "sms"
+          ? "sms"
+          : "email",
     draft_body: r.draft_body,
     agent_kind: r.agent_kind,
     created_at: r.created_at,
