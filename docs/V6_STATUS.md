@@ -70,14 +70,25 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 
 | ID | Directive | Status | Depends on |
 |---|---|---|---|
-| D-607 | Brochure Repository | planned | D-020, Supabase Storage |
-| D-600 | Brochure Agent | planned | D-130, D-322, D-603, D-607, D-614 |
-| D-609 | Click-to-call on canvas | planned | D-433, D-603 |
-| D-601 | Site Visit Booking Agent | planned | D-130, D-602, D-603, D-608 |
+| D-607 | Brochure Repository | **built** | D-020, Supabase Storage |
+| D-600 | Brochure Agent | **built** | D-130, D-322, D-603, D-607, D-614 |
+| D-609 | Click-to-call on canvas | **built** | D-433, D-603 |
+| D-601 | Site Visit Booking Agent | **built** | D-130, D-602, D-603, D-608 |
 | D-614 | Predefined Message Templates | planned | D-322 |
 | D-615 | AI Agent Approval Workflow (manager → org admin) | planned | D-019, D-322 |
 
 **Gate 2:** Brochure loop + Site Visit loop work end-to-end; manager-authored workflow → org-admin approval → live.
+
+**D-607/D-600/D-609/D-601 built 2026-05-14** — Phase 2 steps 2.1→2.4, built end-to-end in one operator-authorized run on `claude/elastic-golick-6f0c2e` (cut from `v6-phase-1@ba1c321`), PR [#85](https://github.com/builtrixlabs/AI_CRM/pull/85) against `v6-phase-2`. State: **built + tested + typechecked + migrations applied & verified on Supabase** for all four; branch pushed to `origin`. Remaining for Gate 2 acceptance (Vercel preview env-sync, preview build, live UI verification, PR review/merge to `v6-phase-2`, post-merge build) are operator-side once the branch is reviewed — `scripts/vercel-env-sync.mjs` needs the parent-repo context (`vercel link` + local `.env`), which the worktree lacks.
+
+- **D-607** Brochure Repository — `brochures` table (per-org RLS, partial index) + a **private Supabase Storage bucket** (first Storage use in the repo — created via `scripts/ensure_brochures_bucket.mjs`, not migration SQL, to avoid a txn-rollback risk). `src/lib/brochures/{schemas,repository}.ts`: `findBrochuresForAgent` (the ranked-match lookup D-600 calls — exact bhk +3, budget_band +2, area +1), signed upload/read URLs (request→upload→finalize, no body-size-limit bump). `/admin/brochures` UI + 3 RBAC perms. Migration `20260514170000_brochures.sql` applied, `verify_607.mjs` 7/7 PASS. +48 unit/RTL + 4 cross-tenant integration tests.
+- **D-600** Brochure Agent — `onCallNextBestAction` emits `agent/brochure.requested` (best-effort) → `brochureAgentOnRequest` Inngest fn → `runBrochureAgent`: lead-data → match criteria → `findBrochuresForAgent` → `gateway.complete` draft (templated fallback) → `agent_approval_queue` row (`agent_kind='brochure_send'`, brochure in `attachments`). `no_match` still queues a row with `error='no_match'`. `dispatchApprovedDraft` resolves fresh 1h brochure signed URLs at send time. Migration `20260514180000_brochure_agent_queue.sql` (`attachments` + `error` columns) applied, `verify_600.mjs` 3/3 PASS. +22 tests. **Auto-send (D-614) deferred — `resolveSendPolicy` is the seam.**
+- **D-609** Click-to-Call on Canvas — `OutboundCallArgs.from_phone_e164` (the Exotel adapter now dials the rep as the `From` leg; backward-compatible). `src/lib/comms/telephony/click-to-call.ts`: `initiateClickToCall` + `recordCallStatusUpdate`. `/api/calls/initiate` (`calls:listen`-gated, requires `profiles.phone`). The D-433 `call-status` webhook — previously scaffolding — is now wired. `ClickToCallButton` on the lead canvas. **No migration — Gate 4 = N/A.** +~19 tests.
+- **D-601** Site Visit Booking Agent — `onCallNextBestAction` emits `agent/site_visit.requested` → `siteVisitAgentOnRequest` → `runSiteVisitBookingAgent`: draft `site_visit` node + `attended` edge + `site_visit_booking` queue row. `queue-item.tsx` branches to `<SiteVisitBookingCard>` (cab form); `submitSiteVisitBookingAction` → `confirmSiteVisitBooking`: writes cab fields, transitions `draft → scheduled`, auto-assigns the project rep via D-608, dispatches the WhatsApp confirmation. **No site-visit DDL** — D-602's `site_visit` jsonb schema already carries the cab/assignment fields. Migration `20260514190000_agent_queue_ref_node.sql` (`agent_approval_queue.ref_node_id`) applied, `verify_601.mjs` 3/3 PASS. +17 tests.
+
+**Phase-2 (2.1→2.4) verification:** full `npx vitest run` → **2004/2004 green** (215 files; +106 over the 1898 Phase-1 baseline — 78 new Phase-2 unit/RTL tests + the in-suite integration realignments). `npx tsc --noEmit` → 0 errors in changed files (9 pre-existing `tests/e2e/` strict-null errors unrelated). `npm run build` green. Three new `scripts/verify_60*.mjs` checkers all PASS against live Supabase.
+
+> **Operator follow-up:** D-600's `onCallNextBestAction` change references `isBrochureAction`/`isSiteVisitBookingAction`; D-614 (step 2.5) wires the `auto_send` policy branch of `resolveSendPolicy`. D-619 (Phase 4) replaces D-601's activity-node "notifications" with real pings.
 
 ## 4. Phase 3 — Manager + org admin UX
 
@@ -171,9 +182,19 @@ v6 Phase 1 (D-602/604/605/  1898 tests / 206 files green (+116 over the D-603
                             New integration suites (excluded from default run):
                             site-visit-coordinator-claims, mih-inbound,
                             project-sales-mapping, mih-to-presales.
-v6 Phase 2:                 ~ +150 unit + 6 integration + 4 E2E (target)
+v6 Phase 2 (D-607/600/609/  2004 tests / 215 files green (+106 over the 1898
+  601 built, 2.1→2.4):      Phase-1 baseline). New default-run suites:
+                            brochures (schemas/repository), brochure-manager +
+                            agent-queue-item RTL, agents/brochure-agent,
+                            comms/telephony/click-to-call, click-to-call-button
+                            RTL, agents/site-visit-agent, site-visit-booking-card
+                            RTL; exotel + dispatch + exotel-webhook suites
+                            extended. New integration suite (excluded from
+                            default run): brochures-cross-tenant.
+v6 Phase 2 (2.5→2.6):       ~ +60 unit + 2 integration (target — D-614, D-615)
 v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 1898 unit tests / 206 files green (Phase 0 + all Phase 1)
+v6 current:                 2004 unit tests / 215 files green (Phase 0 + all
+                            Phase 1 + Phase 2 steps 2.1→2.4)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.

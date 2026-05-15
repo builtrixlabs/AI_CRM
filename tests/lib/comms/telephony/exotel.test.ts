@@ -91,6 +91,37 @@ describe("ExotelTelephonyProvider — outboundClickToCall", () => {
     expect(init.body).toContain("To=");
   });
 
+  it("D-609 — uses from_phone_e164 as the From leg when supplied (bridge mode)", async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ Call: { Sid: "EX-CALL-2" } }));
+    const p = new ExotelTelephonyProvider(CFG);
+    await p.outboundClickToCall({
+      organization_id: "00000000-0000-4000-8000-000000000000",
+      workspace_id: "00000000-0000-4000-8000-000000000001",
+      from_user_id: "00000000-0000-4000-8000-000000000002",
+      from_phone_e164: "+919812345678",
+      to_phone_e164: "+91-9999999999",
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const params = new URLSearchParams(String(init.body));
+    // From = the rep's phone; CallerId stays the org's virtual number.
+    expect(params.get("From")).toBe("+919812345678");
+    expect(params.get("CallerId")).toBe(CFG.virtual_number);
+  });
+
+  it("D-609 — falls back to the virtual number for From when from_phone_e164 is omitted", async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ Call: { Sid: "EX-CALL-3" } }));
+    const p = new ExotelTelephonyProvider(CFG);
+    await p.outboundClickToCall({
+      organization_id: "00000000-0000-4000-8000-000000000000",
+      workspace_id: "00000000-0000-4000-8000-000000000001",
+      from_user_id: "00000000-0000-4000-8000-000000000002",
+      to_phone_e164: "+91-9999999999",
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const params = new URLSearchParams(String(init.body));
+    expect(params.get("From")).toBe(CFG.virtual_number);
+  });
+
   it("rejects missing to_phone_e164", async () => {
     const p = new ExotelTelephonyProvider(CFG);
     await expect(

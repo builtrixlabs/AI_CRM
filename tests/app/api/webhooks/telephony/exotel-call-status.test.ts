@@ -5,17 +5,34 @@ const VALID_ORG = "00000000-0000-4000-8000-000000000001";
 
 const mocks = vi.hoisted(() => ({
   maybeSingle: vi.fn(),
+  nodeMaybeSingle: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   getSupabaseAdmin: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: mocks.maybeSingle,
-        }),
-      }),
-    }),
+    from: (table: string) => {
+      if (table === "org_telephony_config") {
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: mocks.maybeSingle }),
+          }),
+        };
+      }
+      // nodes / audit_log — D-609's recordCallStatusUpdate path. Fully
+      // chainable; the node lookup is driven by mocks.nodeMaybeSingle.
+      const chain: Record<string, unknown> = {};
+      Object.assign(chain, {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () => mocks.nodeMaybeSingle(),
+        update: () => chain,
+        insert: () => Promise.resolve({ error: null }),
+        then: (onF: (v: { error: null }) => unknown) =>
+          Promise.resolve({ error: null }).then(onF),
+      });
+      return chain;
+    },
   }),
 }));
 
@@ -48,6 +65,9 @@ function makeRequest(opts: {
 
 beforeEach(() => {
   mocks.maybeSingle.mockReset();
+  mocks.nodeMaybeSingle.mockReset();
+  // Default: no matching activity node — recordCallStatusUpdate no-ops.
+  mocks.nodeMaybeSingle.mockResolvedValue({ data: null, error: null });
 });
 
 describe("POST /api/webhooks/telephony/exotel/call-status", () => {
@@ -127,8 +147,42 @@ describe("POST /api/webhooks/telephony/exotel/call-status", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { ok?: boolean };
+    const json = (await res.json()) as { ok?: boolean; updated?: boolean };
     expect(json.ok).toBe(true);
+    // D-609 — no matching activity node → benign no-op.
+    expect(json.updated).toBe(false);
+  });
+
+  it("D-609 — patches the activity node when the CallSid matches (updated:true)", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({
+      data: {
+        encrypted_credentials: encryptJson({
+          account_sid: "s",
+          api_key: "correct-key",
+          api_token: "correct-token",
+        }),
+        provider: "exotel",
+        is_active: true,
+      },
+    });
+    mocks.nodeMaybeSingle.mockResolvedValueOnce({
+      data: {
+        id: "activity-1",
+        data: { kind: "call", provider_call_id: "ex-1", status: "initiated" },
+        workspace_id: null,
+      },
+      error: null,
+    });
+    const res = await POST(
+      makeRequest({
+        org: VALID_ORG,
+        auth: basicAuth("correct-key", "correct-token"),
+        body: "CallSid=ex-1&Status=completed&Duration=87",
+      }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok?: boolean; updated?: boolean };
+    expect(json).toEqual({ ok: true, updated: true });
   });
 
   it("returns 401 when no Authorization header is sent", async () => {

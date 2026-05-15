@@ -7,6 +7,14 @@ import {
   approveQueueItemAction,
   rejectQueueItemAction,
 } from "./actions";
+import { SiteVisitBookingCard } from "@/components/agents/site-visit-booking-card";
+
+/** D-600 — a brochure ref carried on a brochure_send queue row. */
+export type QueueAttachment = {
+  brochure_id: string;
+  title: string;
+  document_type: string;
+};
 
 export type QueueItemRow = {
   id: string;
@@ -16,6 +24,10 @@ export type QueueItemRow = {
   draft_body: string;
   agent_kind: string;
   created_at: string;
+  /** D-600 — brochure refs (empty for non-brochure drafts). */
+  attachments: QueueAttachment[];
+  /** D-600 — agent-level error, e.g. 'no_match'. Null on a clean draft. */
+  error: string | null;
 };
 
 type DoneState =
@@ -24,6 +36,22 @@ type DoneState =
   | { kind: "rejected" };
 
 export function QueueItem({ item }: { item: QueueItemRow }) {
+  // D-601 — site_visit_booking rows render a cab-details action card
+  // instead of the standard draft-text textarea. Dispatcher holds no
+  // hooks, so the branch is rules-of-hooks-safe.
+  if (item.agent_kind === "site_visit_booking") {
+    return (
+      <SiteVisitBookingCard
+        queueId={item.id}
+        leadId={item.lead_id}
+        leadLabel={item.lead_label}
+      />
+    );
+  }
+  return <StandardQueueItem item={item} />;
+}
+
+function StandardQueueItem({ item }: { item: QueueItemRow }) {
   const [body, setBody] = useState(item.draft_body);
   const [reason, setReason] = useState("");
   const [pending, startTransition] = useTransition();
@@ -103,6 +131,35 @@ export function QueueItem({ item }: { item: QueueItemRow }) {
         </div>
         <span>{new Date(item.created_at).toLocaleString()}</span>
       </div>
+
+      {item.error === "no_match" && (
+        <p
+          className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800"
+          data-testid={`queue-error-${item.id}`}
+        >
+          No matching brochure found. Upload one at{" "}
+          <Link href="/admin/brochures" className="font-medium underline">
+            /admin/brochures
+          </Link>{" "}
+          or attach a document manually before sending.
+        </p>
+      )}
+
+      {item.attachments.length > 0 && (
+        <ul
+          className="space-y-1"
+          data-testid={`queue-attachments-${item.id}`}
+        >
+          {item.attachments.map((a) => (
+            <li
+              key={a.brochure_id}
+              className="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-xs text-violet-800"
+            >
+              Attachment · {a.document_type.replace(/_/g, " ")}: {a.title}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <textarea
         value={body}
