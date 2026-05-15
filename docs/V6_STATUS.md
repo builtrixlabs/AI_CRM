@@ -74,8 +74,8 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 | D-600 | Brochure Agent | **built** | D-130, D-322, D-603, D-607, D-614 |
 | D-609 | Click-to-call on canvas | **built** | D-433, D-603 |
 | D-601 | Site Visit Booking Agent | **built** | D-130, D-602, D-603, D-608 |
-| D-614 | Predefined Message Templates | planned | D-322 |
-| D-615 | AI Agent Approval Workflow (manager → org admin) | planned | D-019, D-322 |
+| D-614 | Predefined Message Templates | **built** | D-322, D-600 |
+| D-615 | AI Agent Approval Workflow (manager → org admin) | **built** | D-017, D-019, D-322 |
 
 **Gate 2:** Brochure loop + Site Visit loop work end-to-end; manager-authored workflow → org-admin approval → live.
 
@@ -89,6 +89,15 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 **Phase-2 (2.1→2.4) verification:** full `npx vitest run` → **2004/2004 green** (215 files; +106 over the 1898 Phase-1 baseline — 78 new Phase-2 unit/RTL tests + the in-suite integration realignments). `npx tsc --noEmit` → 0 errors in changed files (9 pre-existing `tests/e2e/` strict-null errors unrelated). `npm run build` green. Three new `scripts/verify_60*.mjs` checkers all PASS against live Supabase.
 
 > **Operator follow-up:** D-600's `onCallNextBestAction` change references `isBrochureAction`/`isSiteVisitBookingAction`; D-614 (step 2.5) wires the `auto_send` policy branch of `resolveSendPolicy`. D-619 (Phase 4) replaces D-601's activity-node "notifications" with real pings.
+
+**D-614/D-615 built 2026-05-15** — Phase 2 steps 2.5→2.6, built end-to-end in one operator-authorized run on `feature/614-615-msg-policies-approval-workflow` (cut from `v6-phase-2@9b1a91c`). State: **built + tested + typechecked + migrations applied & verified on Supabase** for both. Verification per directive — unit + RTL + live-Supabase integration; the operator opted out of Playwright e2e for this run (the suite is independently broken — see `memory/v6_preview_verification_env.md`).
+
+- **D-614** Predefined Message Templates — `agent_message_policies` table (per-org, per-agent-kind `auto_send` | `require_approval`, default `require_approval`, sparse — no row means the default). `resolveSendPolicy` moved out of the D-600 stub into `src/lib/agents/send-policy.ts` (the follow-up agent needs it too): real per-org lookup, graceful-degrades to `require_approval` when the table/row is absent. `runBrochureAgent` + `enqueueFollowUpDraft` branch on it — `auto_send` inserts `pending` (the idempotency index still guards dupes), promotes to `approved`, dispatches via `dispatchApprovedDraft`; `no_match` always queues regardless of policy. `site_visit_booking` is a locked `require_approval` row (the cab form is mandatory). `/admin/agents/policies` UI + new `agents:manage_policies` perm. Migration `20260515120000_agent_message_policies.sql` applied, `verify_614.mjs` 6/6 PASS. +54 unit/RTL + 5 cross-tenant integration tests.
+- **D-615** AI Agent Approval Workflow — `directives` gains `lifecycle_status` (`live` | `pending_approval` | `archived`, default `live`) + `submitted_by` / `submitted_at` / `decided_by` / `decided_at` / `rejection_reason`. `createCustomDirective` keys the lifecycle off the author's permissions — a `directives:approve` holder (org_admin/org_owner) self-publishes to `live`; anyone else lands `pending_approval` + `enabled=false`. `manager` gains `directives:author` (so it can author at all). `loadActiveDirectives` gains a `lifecycle_status='live'` filter — a pending workflow is runtime-inert. `listPendingWorkflows` / `approveWorkflow` / `rejectWorkflow` (reason ≥ 10 chars; `archived` is terminal) in `authoring.ts`; `/admin/directives/pending` queue UI gated on `directives:approve`. Migration `20260515120100_directive_lifecycle.sql` applied, `verify_615.mjs` 11/11 PASS. +55 unit/RTL + 5 integration tests.
+
+**Phase-2 (2.5→2.6) verification:** full `npx vitest run` → **2055/2055 green** (221 files; +51 over the 2004 Phase-2.1→2.4 baseline). `npx tsc --noEmit` → 0 errors in changed files (the same 9 pre-existing `tests/e2e/` errors, unrelated). `npm run build` green — `/admin/agents/policies` + `/admin/directives/pending` compile. `verify_614.mjs` + `verify_615.mjs` PASS against live Supabase.
+
+> **Operator follow-up:** D-615 lands only the `lifecycle_status` + approval-audit subset of implementation-order §6's `ai_workflow_versioning.sql` — D-611 (Phase 3) extends the same `directives` columns with `version` / `parent_id` / `compiled_dag` / `test_payloads`. Phase 2 (all of 2.1→2.6) is now built; Gate 2 acceptance (Vercel preview + live UI verification + PR merge to `v6-phase-2`) is operator-side.
 
 ## 4. Phase 3 — Manager + org admin UX
 
@@ -155,8 +164,9 @@ All additive (implementation-order §6 + PRD §4 data models). None applied yet 
 | `20260520120400_presales_allocation_rules.sql` | D-610 | `lead_allocation_rules` + `lead_allocation_state` + RLS | pending |
 | `20260520120500_team_dashboards.sql` | D-612 | `team_dashboard_assignments` + RLS | pending |
 | `20260520120600_mih_lead_inbound.sql` | D-604 | `nodes.source_external_id` + `nodes.source_payload` + dedup index; `mih_inbound_log` | pending |
-| `20260520120700_message_template_policies.sql` | D-614 | `agent_message_policies` | pending |
-| `20260520120800_ai_workflow_versioning.sql` | D-611 | `directives.version` / `parent_id` / `compiled_dag` / `test_payloads` / `last_test_passed_at` / `lifecycle_status` | pending |
+| `20260515120000_agent_message_policies.sql` | D-614 | `agent_message_policies` (per-org send policy) + RLS | **applied** |
+| `20260515120100_directive_lifecycle.sql` | D-615 | `directives.lifecycle_status` + `submitted_by` / `submitted_at` / `decided_by` / `decided_at` / `rejection_reason` + pending-queue index | **applied** |
+| `20260520120800_ai_workflow_versioning.sql` | D-611 | `directives.version` / `parent_id` / `compiled_dag` / `test_payloads` / `last_test_passed_at` (D-615 already landed `lifecycle_status`) | pending |
 | `20260520120900_super_admin_impersonation_log.sql` | D-606 | `super_admin_impersonation_log` + `platform_defects`; `organizations.feature_flags` | pending |
 | _(D-600)_ | D-600 | `agent_approval_queue` extended: `kind`, `attachments`, `error` | pending |
 
@@ -191,10 +201,18 @@ v6 Phase 2 (D-607/600/609/  2004 tests / 215 files green (+106 over the 1898
                             RTL; exotel + dispatch + exotel-webhook suites
                             extended. New integration suite (excluded from
                             default run): brochures-cross-tenant.
-v6 Phase 2 (2.5→2.6):       ~ +60 unit + 2 integration (target — D-614, D-615)
+v6 Phase 2 (D-614/D-615     2055 tests / 221 files green (+51 over the 2004
+  built, 2.5→2.6):          Phase-2.1→2.4 baseline). New default-run suites:
+                            agents/send-policy, agents/policies actions +
+                            policies-form RTL, doe/workflow-approval,
+                            directives/pending actions + pending-queue RTL;
+                            brochure-agent + follow-up-stale-lead + doe/
+                            authoring suites extended. New integration suites
+                            (excluded from default run): agent-message-
+                            policies, directive-lifecycle.
 v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 2004 unit tests / 215 files green (Phase 0 + all
-                            Phase 1 + Phase 2 steps 2.1→2.4)
+v6 current:                 2055 unit tests / 221 files green (Phase 0 + all
+                            Phase 1 + all Phase 2 — steps 2.1→2.6)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.

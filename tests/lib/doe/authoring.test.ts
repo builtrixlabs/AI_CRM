@@ -482,7 +482,11 @@ describe("createCustomDirective", () => {
       m.client,
     );
 
-    expect(result).toEqual({ id: "new-uuid", code: "C-01" });
+    expect(result).toEqual({
+      id: "new-uuid",
+      code: "C-01",
+      lifecycle_status: "live",
+    });
     expect(m.inserts.directives.length).toBe(1);
     const inserted = m.inserts.directives[0];
     expect(inserted.code).toBe("C-01");
@@ -490,6 +494,64 @@ describe("createCustomDirective", () => {
     expect(inserted.tier).toBe("T0"); // default for notify_user
     expect(inserted.created_by).toBe(ACTOR);
     expect(m.inserts.audit_log[0].action).toBe("directive_created");
+  });
+
+  // ── D-615 lifecycle ──────────────────────────────────────────────────
+  it("an org_admin-authored workflow lands live + enabled (AC-2)", async () => {
+    const m = makeClient({ org_rows: [], insert_id: "live-uuid" });
+    const result = await createCustomDirective(
+      {
+        caller_org_id: ORG_A,
+        actor_id: ACTOR,
+        actor_role: "org_admin",
+        input: {
+          display_name: "Org admin workflow",
+          trigger_kind: "lead.created",
+          trigger_config: {},
+          action_kind: "flag_lead",
+          action_config: {},
+          enabled: true,
+        },
+      },
+      m.client,
+    );
+    expect(result.lifecycle_status).toBe("live");
+    const inserted = m.inserts.directives[0];
+    expect(inserted.lifecycle_status).toBe("live");
+    expect(inserted.enabled).toBe(true);
+    expect(inserted.submitted_by).toBeUndefined();
+  });
+
+  it("a manager-authored workflow lands pending_approval + disabled, submitter stamped (AC-1)", async () => {
+    const m = makeClient({ org_rows: [], insert_id: "pending-uuid" });
+    const result = await createCustomDirective(
+      {
+        caller_org_id: ORG_A,
+        actor_id: ACTOR,
+        actor_role: "manager",
+        input: {
+          display_name: "Manager workflow",
+          trigger_kind: "lead.created",
+          trigger_config: {},
+          action_kind: "flag_lead",
+          action_config: {},
+          enabled: true,
+        },
+      },
+      m.client,
+    );
+    expect(result.lifecycle_status).toBe("pending_approval");
+    const inserted = m.inserts.directives[0];
+    expect(inserted.lifecycle_status).toBe("pending_approval");
+    // disabled regardless of input.enabled — runtime-inert until approved.
+    expect(inserted.enabled).toBe(false);
+    expect(inserted.submitted_by).toBe(ACTOR);
+    expect(inserted.submitted_at).toBeTruthy();
+    // audit row stamps the real role, not a hard-coded "org_admin".
+    expect(m.inserts.audit_log[0].actor_role).toBe("manager");
+    expect(m.inserts.audit_log[0].diff).toMatchObject({
+      lifecycle_status: "pending_approval",
+    });
   });
 
   it("uses default tier when not supplied (send_template_message → T2)", async () => {

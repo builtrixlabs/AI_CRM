@@ -1,4 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// D-614 — runBrochureAgent calls dispatchApprovedDraft on the auto_send
+// path. Mock it: the dispatch internals (adapter resolution, sends) are
+// covered by the dispatch suite; here we only assert it's invoked.
+const mocks = vi.hoisted(() => ({
+  dispatchApprovedDraft: vi.fn(),
+}));
+vi.mock("@/lib/agents/follow-up/dispatch", () => ({
+  dispatchApprovedDraft: mocks.dispatchApprovedDraft,
+}));
+
 import {
   BROCHURE_AGENT_KIND,
   draftBrochureMessage,
@@ -6,6 +17,10 @@ import {
   isBrochureAction,
   runBrochureAgent,
 } from "@/lib/agents/brochure-agent";
+
+beforeEach(() => {
+  mocks.dispatchApprovedDraft.mockReset();
+});
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const OTHER_ORG = "99999999-2222-4333-8444-555555555555";
@@ -61,8 +76,11 @@ function makeClient(opts: {
     data: { id: string } | null;
     error: { code?: string; message: string } | null;
   };
+  /** D-614 — the stored send policy; absent => no row => require_approval. */
+  policyMode?: "auto_send" | "require_approval";
 }) {
   const queueInserts: Array<Record<string, unknown>> = [];
+  const queueUpdates: Array<Record<string, unknown>> = [];
 
   // nodes — honors the organization_id eq filter so the cross-org test is real.
   function nodesBuilder() {
@@ -99,6 +117,21 @@ function makeClient(opts: {
     return b;
   }
 
+  // agent_message_policies — D-614 resolveSendPolicy lookup.
+  function policiesBuilder() {
+    const b: Record<string, unknown> = {};
+    Object.assign(b, {
+      select: () => b,
+      eq: () => b,
+      maybeSingle: () =>
+        Promise.resolve({
+          data: opts.policyMode ? { mode: opts.policyMode } : null,
+          error: null,
+        }),
+    });
+    return b;
+  }
+
   function queueBuilder() {
     return {
       insert: (rowArg: Record<string, unknown>) => {
@@ -113,6 +146,17 @@ function makeClient(opts: {
         });
         return ib;
       },
+      // D-614 auto_send promotes the pending row to approved.
+      update: (patch: Record<string, unknown>) => {
+        queueUpdates.push(patch);
+        const ub: Record<string, unknown> = {};
+        Object.assign(ub, {
+          eq: () => ub,
+          then: (onF: (v: { data: null; error: null }) => unknown) =>
+            Promise.resolve({ data: null, error: null }).then(onF),
+        });
+        return ub;
+      },
     };
   }
 
@@ -120,12 +164,13 @@ function makeClient(opts: {
     from: (table: string) => {
       if (table === "nodes") return nodesBuilder();
       if (table === "brochures") return brochuresBuilder();
+      if (table === "agent_message_policies") return policiesBuilder();
       if (table === "agent_approval_queue") return queueBuilder();
       throw new Error(`unexpected table ${table}`);
     },
   };
 
-  return { client, queueInserts };
+  return { client, queueInserts, queueUpdates };
 }
 
 function leadNode(over: Partial<LeadNode> = {}): LeadNode {
@@ -386,5 +431,90 @@ describe("runBrochureAgent", () => {
     expect(queueInserts).toHaveLength(1);
     expect(String(queueInserts[0].draft_body)).toContain("Asha");
     expect(String(queueInserts[0].draft_body)).toContain("Tower B price sheet");
+  });
+});
+
+describe("runBrochureAgent — D-614 send policy", () => {
+  it("auto-sends a matched brochure when the policy is auto_send (AC-2)", async () => {
+    const { client, queueInserts, queueUpdates } = makeClient({
+      lead: leadNode(),
+      brochures: [brochureRow({ id: "broc-auto" })],
+      policyMode: "auto_send",
+    });
+    mocks.dispatchApprovedDraft.mockResolvedValue({
+      ok: true,
+      status: "sent",
+      provider: "mock",
+      provider_message_id: "m1",
+      activity_id: "a1",
+    });
+    const r = await runBrochureAgent(
+      { organization_id: ORG, lead_id: LEAD, nba_action: "send_brochure" },
+      { client: client as never, gateway: okGateway("Hi, sharing the brochure.") },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && "queue_id" in r) {
+      expect(r.matched).toBe(true);
+      expect(r.dispatched).toBe(true);
+    }
+    // Still inserted pending first — the idempotency index guards duplicates.
+    expect(queueInserts).toHaveLength(1);
+    expect(queueInserts[0].status).toBe("pending");
+    // Then promoted to approved before dispatch.
+    expect(queueUpdates).toHaveLength(1);
+    expect(queueUpdates[0].status).toBe("approved");
+    expect(mocks.dispatchApprovedDraft).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT auto-send a no_match row even under auto_send (AC-3)", async () => {
+    const { client, queueInserts, queueUpdates } = makeClient({
+      lead: leadNode(),
+      brochures: [],
+      policyMode: "auto_send",
+    });
+    const r = await runBrochureAgent(
+      { organization_id: ORG, lead_id: LEAD, nba_action: "send_brochure" },
+      { client: client as never, gateway: okGateway("unused") },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && "queue_id" in r) {
+      expect(r.matched).toBe(false);
+      expect(r.dispatched).toBe(false);
+    }
+    expect(queueInserts[0].error).toBe("no_match");
+    expect(queueUpdates).toHaveLength(0);
+    expect(mocks.dispatchApprovedDraft).not.toHaveBeenCalled();
+  });
+
+  it("queues for approval (no dispatch) when the policy is require_approval", async () => {
+    const { client, queueUpdates } = makeClient({
+      lead: leadNode(),
+      brochures: [brochureRow()],
+      policyMode: "require_approval",
+    });
+    const r = await runBrochureAgent(
+      { organization_id: ORG, lead_id: LEAD, nba_action: "send_brochure" },
+      { client: client as never, gateway: okGateway("x") },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && "queue_id" in r) expect(r.dispatched).toBe(false);
+    expect(queueUpdates).toHaveLength(0);
+    expect(mocks.dispatchApprovedDraft).not.toHaveBeenCalled();
+  });
+
+  it("defaults to require_approval when no policy row exists (AC-1)", async () => {
+    const { client, queueUpdates } = makeClient({
+      lead: leadNode(),
+      brochures: [brochureRow()],
+      // no policyMode — no row
+    });
+    const r = await runBrochureAgent(
+      { organization_id: ORG, lead_id: LEAD, nba_action: "send_brochure" },
+      { client: client as never, gateway: okGateway("x") },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok && "queue_id" in r) expect(r.dispatched).toBe(false);
+    expect(queueUpdates).toHaveLength(0);
+    expect(mocks.dispatchApprovedDraft).not.toHaveBeenCalled();
   });
 });

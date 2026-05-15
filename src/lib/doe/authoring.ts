@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { BASE_ROLE_PERMS } from "@/lib/auth/rbac";
 import type { DirectiveRow } from "./types";
 import {
   createDirectiveInputSchema,
@@ -236,19 +237,40 @@ export async function toggleDirective(
  * `C-NN` code automatically; defaults the tier from `action_kind` when not
  * explicitly provided. Writes one audit_log row with
  * `action='directive_created'`.
+ *
+ * D-615 — the lifecycle is keyed off the author's permissions: an author
+ * holding `directives:approve` (org_admin / org_owner) self-publishes to
+ * `live`; anyone else (manager / workspace_admin) lands `pending_approval`
+ * + `enabled=false` with `submitted_by` / `submitted_at` stamped, and the
+ * workflow is runtime-inert until an org admin approves it.
  */
 export async function createCustomDirective(
   args: {
     caller_org_id: string;
     actor_id: string;
-    /** Caller's base_role — stamped on the audit_log row for fidelity. */
+    /** Caller's base_role — stamped on the audit_log row + drives the lifecycle. */
     actor_role: string;
     input: CreateDirectiveInput;
   },
   client: SupabaseClient = getSupabaseAdmin(),
-): Promise<{ id: string; code: string }> {
+): Promise<{
+  id: string;
+  code: string;
+  lifecycle_status: "live" | "pending_approval";
+}> {
   const code = await nextCustomCode(args.caller_org_id, client);
   const tier = args.input.tier ?? defaultTierForAction(args.input.action_kind);
+
+  // "Can self-publish" == "holds directives:approve" — ties the gate to
+  // the permission catalog rather than a hard-coded role-string match.
+  const canSelfApprove =
+    BASE_ROLE_PERMS[args.actor_role as keyof typeof BASE_ROLE_PERMS]?.has(
+      "directives:approve",
+    ) ?? false;
+  const lifecycle_status: "live" | "pending_approval" = canSelfApprove
+    ? "live"
+    : "pending_approval";
+  const nowIso = new Date().toISOString();
 
   const ins = await client
     .from("directives")
@@ -261,7 +283,13 @@ export async function createCustomDirective(
       action_kind: args.input.action_kind,
       action_config: args.input.action_config ?? {},
       tier,
-      enabled: args.input.enabled ?? true,
+      // A pending_approval workflow is disabled until approved — belt to
+      // the runtime's lifecycle_status suspenders.
+      enabled: canSelfApprove ? (args.input.enabled ?? true) : false,
+      lifecycle_status,
+      ...(canSelfApprove
+        ? {}
+        : { submitted_by: args.actor_id, submitted_at: nowIso }),
       created_by: args.actor_id,
       created_via: SYSTEM_VIA,
       updated_by: args.actor_id,
@@ -277,7 +305,7 @@ export async function createCustomDirective(
   await client.from("audit_log").insert({
     actor_id: args.actor_id,
     actor_type: "user",
-    actor_role: "org_admin",
+    actor_role: args.actor_role,
     organization_id: args.caller_org_id,
     table_name: "directives",
     record_id: inserted.id,
@@ -288,10 +316,11 @@ export async function createCustomDirective(
       trigger_kind: args.input.trigger_kind,
       action_kind: args.input.action_kind,
       tier,
+      lifecycle_status,
     },
   });
 
-  return { id: inserted.id, code };
+  return { id: inserted.id, code, lifecycle_status };
 }
 
 /**
@@ -409,5 +438,195 @@ export async function listRecentInvocations(
       display_name: dir?.display_name ?? "(unknown)",
     };
   });
+}
+
+// ── D-615: AI Agent Approval Workflow ──────────────────────────────────────
+
+/** Minimum length for a workflow rejection reason (PRD §D-615 AC-3). */
+export const WORKFLOW_REJECTION_MIN_REASON = 10;
+
+/** A directive awaiting org-admin approval — the /admin/directives/pending row. */
+export type PendingWorkflowRow = {
+  id: string;
+  code: string;
+  display_name: string;
+  trigger_kind: string;
+  action_kind: string;
+  tier: string;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  created_at: string;
+};
+
+/**
+ * List the caller org's workflows awaiting approval, oldest submission
+ * first. Reads only — no audit row. Org-scoped via `organization_id`.
+ */
+export async function listPendingWorkflows(
+  organization_id: string,
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<PendingWorkflowRow[]> {
+  const { data, error } = await client
+    .from("directives")
+    .select(
+      "id, code, display_name, trigger_kind, action_kind, tier, submitted_by, submitted_at, created_at",
+    )
+    .eq("organization_id", organization_id)
+    .eq("lifecycle_status", "pending_approval")
+    .is("deleted_at", null)
+    .order("submitted_at", { ascending: true });
+  if (error || !data) return [];
+  return data as PendingWorkflowRow[];
+}
+
+/**
+ * Load a directive by id, org-scoped, asserting it is pending approval.
+ * Shared by approve / reject. Throws `DirectiveAuthoringError('not_found')`
+ * for a missing or cross-org id (same shape — no existence leak) and
+ * `('conflict')` for a row that is not `pending_approval`.
+ */
+async function loadPendingForDecision(
+  caller_org_id: string,
+  directive_id: string,
+  client: SupabaseClient,
+): Promise<{ id: string; code: string }> {
+  const { data, error } = await client
+    .from("directives")
+    .select("id, code, lifecycle_status, organization_id")
+    .eq("id", directive_id)
+    .eq("organization_id", caller_org_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw new DirectiveAuthoringError(error.message, "invalid");
+  if (!data) {
+    throw new DirectiveAuthoringError("AI workflow not found", "not_found");
+  }
+  const row = data as { id: string; code: string; lifecycle_status: string };
+  if (row.lifecycle_status !== "pending_approval") {
+    throw new DirectiveAuthoringError(
+      "AI workflow is not pending approval",
+      "conflict",
+    );
+  }
+  return { id: row.id, code: row.code };
+}
+
+/**
+ * Approve a pending workflow: `lifecycle_status → 'live'`, `enabled → true`,
+ * `decided_by` / `decided_at` stamped. Writes one audit_log row
+ * (`action='workflow_approved'`). Org-scoped via `caller_org_id`.
+ */
+export async function approveWorkflow(
+  args: {
+    caller_org_id: string;
+    actor_id: string;
+    actor_role: string;
+    directive_id: string;
+  },
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<{ id: string; code: string; lifecycle_status: "live" }> {
+  const row = await loadPendingForDecision(
+    args.caller_org_id,
+    args.directive_id,
+    client,
+  );
+  const nowIso = new Date().toISOString();
+
+  const upd = await client
+    .from("directives")
+    .update({
+      lifecycle_status: "live",
+      enabled: true,
+      decided_by: args.actor_id,
+      decided_at: nowIso,
+      updated_at: nowIso,
+      updated_by: args.actor_id,
+      updated_via: SYSTEM_VIA,
+    })
+    .eq("id", row.id)
+    .eq("organization_id", args.caller_org_id);
+  const updErr = (upd as { error: { message: string } | null }).error;
+  if (updErr) throw new DirectiveAuthoringError(updErr.message, "invalid");
+
+  await client.from("audit_log").insert({
+    actor_id: args.actor_id,
+    actor_type: "user",
+    actor_role: args.actor_role,
+    organization_id: args.caller_org_id,
+    table_name: "directives",
+    record_id: row.id,
+    action: "workflow_approved",
+    diff: { code: row.code, from: "pending_approval", to: "live" },
+  });
+
+  return { id: row.id, code: row.code, lifecycle_status: "live" };
+}
+
+/**
+ * Reject a pending workflow: `lifecycle_status → 'archived'`,
+ * `enabled → false`, `decided_by` / `decided_at` / `rejection_reason`
+ * stamped. Requires a reason ≥ `WORKFLOW_REJECTION_MIN_REASON` chars — a
+ * shorter reason throws `DirectiveAuthoringError('invalid')` with no
+ * write. Writes one audit_log row (`action='workflow_rejected'`).
+ * Org-scoped. `archived` is terminal.
+ */
+export async function rejectWorkflow(
+  args: {
+    caller_org_id: string;
+    actor_id: string;
+    actor_role: string;
+    directive_id: string;
+    reason: string;
+  },
+  client: SupabaseClient = getSupabaseAdmin(),
+): Promise<{ id: string; code: string; lifecycle_status: "archived" }> {
+  const reason = args.reason.trim();
+  if (reason.length < WORKFLOW_REJECTION_MIN_REASON) {
+    throw new DirectiveAuthoringError(
+      `Rejection reason must be at least ${WORKFLOW_REJECTION_MIN_REASON} characters`,
+      "invalid",
+    );
+  }
+  const row = await loadPendingForDecision(
+    args.caller_org_id,
+    args.directive_id,
+    client,
+  );
+  const nowIso = new Date().toISOString();
+
+  const upd = await client
+    .from("directives")
+    .update({
+      lifecycle_status: "archived",
+      enabled: false,
+      decided_by: args.actor_id,
+      decided_at: nowIso,
+      rejection_reason: reason,
+      updated_at: nowIso,
+      updated_by: args.actor_id,
+      updated_via: SYSTEM_VIA,
+    })
+    .eq("id", row.id)
+    .eq("organization_id", args.caller_org_id);
+  const updErr = (upd as { error: { message: string } | null }).error;
+  if (updErr) throw new DirectiveAuthoringError(updErr.message, "invalid");
+
+  await client.from("audit_log").insert({
+    actor_id: args.actor_id,
+    actor_type: "user",
+    actor_role: args.actor_role,
+    organization_id: args.caller_org_id,
+    table_name: "directives",
+    record_id: row.id,
+    action: "workflow_rejected",
+    diff: {
+      code: row.code,
+      from: "pending_approval",
+      to: "archived",
+      reason,
+    },
+  });
+
+  return { id: row.id, code: row.code, lifecycle_status: "archived" };
 }
 
