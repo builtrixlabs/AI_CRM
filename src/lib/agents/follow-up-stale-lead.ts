@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { resolveSendPolicy, type AgentMessagePolicy } from "./send-policy";
+import {
+  dispatchApprovedDraft,
+  FOLLOW_UP_SERVICE_ACCOUNT,
+} from "./follow-up/dispatch";
 
 /**
  * D-322 — Follow-up agent (T2: templated, no LLM call).
@@ -118,11 +123,21 @@ export async function findStaleLeads(
  * A second insert for the same lead while one is pending is a no-op
  * (returns the row that already exists OR a 23505 conflict — caller treats
  * conflict as benign).
+ *
+ * D-614 — under an `auto_send` policy the row is still inserted `pending`
+ * first (so the partial unique index still guards duplicates), then
+ * promoted to `approved` and dispatched immediately. `decided_by` is the
+ * follow-up service account, so provenance distinguishes an auto-send from
+ * a human approval.
  */
 export async function enqueueFollowUpDraft(
   lead: LeadCandidate,
-  client: SupabaseClient = getSupabaseAdmin()
-): Promise<{ ok: true; queue_id: string } | { ok: false; error: string }> {
+  client: SupabaseClient = getSupabaseAdmin(),
+  policy: AgentMessagePolicy = "require_approval"
+): Promise<
+  | { ok: true; queue_id: string; dispatched: boolean }
+  | { ok: false; error: string }
+> {
   const draft = draftFollowUp(lead);
   const { data, error } = await client
     .from("agent_approval_queue")
@@ -143,17 +158,55 @@ export async function enqueueFollowUpDraft(
     }
     return { ok: false, error: error.message };
   }
-  return { ok: true, queue_id: (data as { id: string }).id };
+  const queue_id = (data as { id: string }).id;
+
+  let dispatched = false;
+  if (policy === "auto_send") {
+    await client
+      .from("agent_approval_queue")
+      .update({
+        status: "approved",
+        decided_at: new Date().toISOString(),
+        decided_by: FOLLOW_UP_SERVICE_ACCOUNT,
+      })
+      .eq("id", queue_id)
+      .eq("organization_id", lead.organization_id);
+    const sent = await dispatchApprovedDraft(
+      {
+        queue_id,
+        organization_id: lead.organization_id,
+        actor_id: FOLLOW_UP_SERVICE_ACCOUNT,
+      },
+      client
+    );
+    dispatched = sent.ok;
+  }
+
+  return { ok: true, queue_id, dispatched };
 }
 
 /**
  * Cron entry point: for each org, find stale leads + enqueue drafts.
  * Returns a summary so the Inngest function can log it.
+ *
+ * D-614 — the org's `follow_up_stale_lead` send policy is resolved once
+ * per org and threaded through to `enqueueFollowUpDraft`. `auto_sent`
+ * counts the drafts dispatched immediately under an `auto_send` policy.
  */
 export async function runFollowUpAgent(
   client: SupabaseClient = getSupabaseAdmin()
-): Promise<{ orgs_scanned: number; drafts_enqueued: number; skipped_dup: number }> {
-  const summary = { orgs_scanned: 0, drafts_enqueued: 0, skipped_dup: 0 };
+): Promise<{
+  orgs_scanned: number;
+  drafts_enqueued: number;
+  skipped_dup: number;
+  auto_sent: number;
+}> {
+  const summary = {
+    orgs_scanned: 0,
+    drafts_enqueued: 0,
+    skipped_dup: 0,
+    auto_sent: 0,
+  };
 
   const { data: orgs } = await client
     .from("organizations")
@@ -162,11 +215,16 @@ export async function runFollowUpAgent(
 
   for (const o of (orgs ?? []) as { id: string }[]) {
     summary.orgs_scanned += 1;
+    const policy = await resolveSendPolicy(o.id, AGENT_KIND, client);
     const stale = await findStaleLeads(o.id, Date.now(), client);
     for (const lead of stale) {
-      const r = await enqueueFollowUpDraft(lead, client);
-      if (r.ok) summary.drafts_enqueued += 1;
-      else if (r.error === "already_pending") summary.skipped_dup += 1;
+      const r = await enqueueFollowUpDraft(lead, client, policy);
+      if (r.ok) {
+        summary.drafts_enqueued += 1;
+        if (r.dispatched) summary.auto_sent += 1;
+      } else if (r.error === "already_pending") {
+        summary.skipped_dup += 1;
+      }
     }
   }
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, PLACEHOLDER_SLUGS } from "@/lib/cmdk/catalog";
+import { COMMANDS } from "@/lib/cmdk/catalog";
 import { COMMAND_GROUPS, COMMAND_KINDS, ACTION_KEYS } from "@/lib/cmdk/types";
 import { PERMISSIONS } from "@/lib/auth/rbac";
 
 describe("COMMANDS catalog", () => {
-  it("ships exactly 34 commands (V0 base 30 + 4 V1 admin nav from D-017..D-021)", () => {
-    expect(COMMANDS.length).toBe(34);
+  it("ships exactly 33 commands (D-617 resolved the 12 placeholders + removed account-keyboard-shortcuts)", () => {
+    expect(COMMANDS.length).toBe(33);
   });
 
   it("every id is unique", () => {
@@ -27,6 +27,12 @@ describe("COMMANDS catalog", () => {
     }
   });
 
+  it("D-617 — no command has the removed `placeholder` kind", () => {
+    expect(
+      COMMANDS.some((c) => (c.kind as string) === "placeholder"),
+    ).toBe(false);
+  });
+
   it("every navigate command has a target starting with /", () => {
     const nav = COMMANDS.filter((c) => c.kind === "navigate");
     expect(nav.length).toBeGreaterThan(0);
@@ -36,15 +42,30 @@ describe("COMMANDS catalog", () => {
     }
   });
 
-  it("every placeholder command targets /dashboard/placeholder/<slug>", () => {
-    const placeholders = COMMANDS.filter((c) => c.kind === "placeholder");
-    expect(placeholders.length).toBeGreaterThan(0);
-    const known = new Set(PLACEHOLDER_SLUGS as readonly string[]);
-    for (const c of placeholders) {
-      expect(c.target).toBeTruthy();
-      const m = c.target!.match(/^\/dashboard\/placeholder\/([^/]+)$/);
-      expect(m).not.toBeNull();
-      expect(known.has(m![1]!)).toBe(true);
+  it("D-617 — no command targets the removed /dashboard/placeholder route", () => {
+    for (const c of COMMANDS) {
+      if (c.kind === "navigate" && c.target) {
+        expect(c.target.includes("/dashboard/placeholder/")).toBe(false);
+      }
+    }
+  });
+
+  it("D-617 — the 8 lead-filter shortcuts navigate to /dashboard/leads?canned=", () => {
+    const ids = [
+      "lead-show-hot",
+      "lead-show-new",
+      "lead-show-contacted",
+      "lead-show-qualified",
+      "lead-show-terminal",
+      "lead-source-magicbricks",
+      "lead-source-99acres",
+      "lead-source-walkin",
+    ];
+    for (const id of ids) {
+      const c = COMMANDS.find((x) => x.id === id);
+      expect(c, `command ${id} should exist`).toBeDefined();
+      expect(c!.kind).toBe("navigate");
+      expect(c!.target).toMatch(/^\/dashboard\/leads\?canned=/);
     }
   });
 
@@ -80,22 +101,6 @@ describe("COMMANDS catalog", () => {
   it("ids are kebab-case (lowercase + hyphens)", () => {
     for (const c of COMMANDS) {
       expect(c.id).toMatch(/^[a-z][a-z0-9-]*$/);
-    }
-  });
-});
-
-describe("PLACEHOLDER_SLUGS", () => {
-  it("has unique entries", () => {
-    expect(new Set(PLACEHOLDER_SLUGS).size).toBe(PLACEHOLDER_SLUGS.length);
-  });
-
-  it("every placeholder command's slug appears in the set", () => {
-    const known = new Set(PLACEHOLDER_SLUGS as readonly string[]);
-    const usedSlugs = COMMANDS.filter((c) => c.kind === "placeholder").map(
-      (c) => c.target!.replace("/dashboard/placeholder/", ""),
-    );
-    for (const s of usedSlugs) {
-      expect(known.has(s)).toBe(true);
     }
   });
 });

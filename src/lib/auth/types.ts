@@ -13,6 +13,13 @@ export const BASE_ROLES = [
   "read_only",
   "channel_partner",
   "service_account",
+  // D-602 (V6 Phase 1) — implementation-order §6 role extension. Mirrors
+  // the ALTER TYPE base_role ADD VALUE order in
+  // supabase/migrations/20260514130000_v6_role_extensions.sql.
+  "presales_rep",
+  "telemarketing_rep",
+  "customer_recovery_rep",
+  "site_visit_coordinator",
 ] as const;
 
 export type BaseRole = (typeof BASE_ROLES)[number];

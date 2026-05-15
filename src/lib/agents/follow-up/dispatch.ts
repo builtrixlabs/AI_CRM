@@ -6,11 +6,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { CommsError } from "@/lib/comms/types";
-import * as email from "@/lib/comms/email";
-import * as sms from "@/lib/comms/sms";
+import { resolveOrgAdapter } from "@/lib/comms/resolve-org-adapter";
+import { getBrochureSignedUrl } from "@/lib/brochures/repository";
 import {
   FOLLOW_UP_DLT_TEMPLATES,
-  registerFollowUpDltTemplates,
+  FOLLOW_UP_DLT_TEMPLATE_IDS,
+  FOLLOW_UP_WA_TEMPLATES,
 } from "./dlt";
 
 export const FOLLOW_UP_SERVICE_ACCOUNT =
@@ -42,13 +43,12 @@ export type DispatchResult =
       message?: string;
     };
 
-/**
- * Resolve the V1 provider id per channel. V1 hardcodes 'mock' — when an
- * org configures a live provider (future directive), this function reads
- * from agent_org_configs / integration_secrets.
- */
-function pickProvider(channel: "email" | "sms" | "whatsapp"): string {
-  return "mock";
+function errToMessage(err: unknown): string {
+  return err instanceof CommsError
+    ? `${err.kind}: ${err.message}`
+    : err instanceof Error
+      ? err.message
+      : "Unknown send error";
 }
 
 export async function dispatchApprovedDraft(
@@ -59,7 +59,7 @@ export async function dispatchApprovedDraft(
   const { data: rowData, error: rowErr } = await client
     .from("agent_approval_queue")
     .select(
-      "id, organization_id, workspace_id, lead_id, agent_kind, channel, draft_body, edited_body, status, sent_at",
+      "id, organization_id, workspace_id, lead_id, agent_kind, channel, draft_body, edited_body, status, sent_at, attachments",
     )
     .eq("id", args.queue_id)
     .eq("organization_id", args.organization_id)
@@ -77,6 +77,8 @@ export async function dispatchApprovedDraft(
     edited_body: string | null;
     status: "pending" | "approved" | "rejected" | "sent";
     sent_at: string | null;
+    // D-600 — brochure_send rows carry brochure refs here.
+    attachments: unknown;
   };
 
   if (row.status === "sent") return { ok: true, already_sent: true };
@@ -84,22 +86,48 @@ export async function dispatchApprovedDraft(
     return { ok: false, reason: "not_approved" };
   }
 
-  // 2. WhatsApp is deferred until BSP wired.
-  if (row.channel === "whatsapp") {
+  // Local helpers — close over client, args, row. `deferred` is the
+  // "org hasn't configured this channel" path: approval succeeded, send is
+  // deferred, row stays approved. `recordSendFailure` is the D-415 retry
+  // contract: stamp send_error, leave the row approved for re-approval.
+  const deferred = async (channel: string): Promise<DispatchResult> => {
     await client.from("audit_log").insert({
       actor_id: args.actor_id,
       actor_type: "user",
       actor_role: "org_admin",
-      organization_id: args.organization_id,
+      organization_id: row.organization_id,
       table_name: "agent_approval_queue",
       record_id: row.id,
       action: "agent_draft_send_deferred",
-      diff: { channel: "whatsapp", reason: "not_configured" },
+      diff: { channel, reason: "not_configured" },
     });
-    return { ok: false, reason: "not_configured", message: "whatsapp" };
-  }
+    return { ok: false, reason: "not_configured", message: channel };
+  };
 
-  // 3. Load the lead's recipient (phone / email) from nodes.data.
+  const recordSendFailure = async (
+    channel: string,
+    provider: string,
+    message: string,
+  ): Promise<DispatchResult> => {
+    await client
+      .from("agent_approval_queue")
+      .update({ send_error: message.slice(0, 500) })
+      .eq("id", row.id)
+      .eq("organization_id", row.organization_id);
+    await client.from("audit_log").insert({
+      actor_id: args.actor_id,
+      actor_type: "user",
+      actor_role: "org_admin",
+      organization_id: row.organization_id,
+      table_name: "agent_approval_queue",
+      record_id: row.id,
+      action: "agent_draft_send_failed",
+      diff: { channel, provider, reason: message },
+    });
+    return { ok: false, reason: "provider_error", message };
+  };
+
+  // 2. Load the lead's recipient (phone / email) from nodes.data.
   const { data: leadData } = await client
     .from("nodes")
     .select("data, label, workspace_id, organization_id")
@@ -118,24 +146,32 @@ export async function dispatchApprovedDraft(
 
   const body = (row.edited_body ?? row.draft_body).trim();
 
-  // 4. Channel dispatch.
-  const provider = pickProvider(row.channel);
+  // 3. Channel dispatch — resolve the org's live adapter, then send.
+  let provider: string;
   let providerMessageId: string;
-  try {
-    if (row.channel === "email") {
-      const to =
-        (lead.data?.email as string | undefined) ??
-        (lead.data?.contact_email as string | undefined);
-      if (!to)
-        return {
-          ok: false,
-          reason: "missing_recipient",
-          message: "no email on lead",
-        };
-      const adapter = email.getProvider(
-        provider as never,
-      );
-      const r = await adapter.send({
+  if (row.channel === "email") {
+    const to =
+      (lead.data?.email as string | undefined) ??
+      (lead.data?.contact_email as string | undefined);
+    if (!to)
+      return {
+        ok: false,
+        reason: "missing_recipient",
+        message: "no email on lead",
+      };
+    const resolved = await resolveOrgAdapter(
+      "email",
+      row.organization_id,
+      client,
+    );
+    if (!resolved.ok) {
+      return resolved.reason === "not_configured"
+        ? deferred("email")
+        : recordSendFailure("email", "unresolved", resolved.message);
+    }
+    provider = resolved.provider;
+    try {
+      const r = await resolved.adapter.send({
         kind: "custom",
         organization_id: row.organization_id,
         to,
@@ -143,28 +179,33 @@ export async function dispatchApprovedDraft(
         body_text: body,
       });
       providerMessageId = r.provider_message_id;
-    } else if (row.channel === "sms") {
-      const to =
-        (lead.data?.phone as string | undefined) ??
-        (lead.data?.contact_phone as string | undefined);
-      if (!to)
-        return {
-          ok: false,
-          reason: "missing_recipient",
-          message: "no phone on lead",
-        };
-      const adapter = sms.getProvider(provider as never);
-      // V1 SMS-mock: register the default DLT template (idempotent at the set
-      // level inside MockSmsProvider).
-      const maybeRegisterable = adapter as unknown as {
-        registerTemplate?: (id: string) => void;
+    } catch (err) {
+      return recordSendFailure("email", provider, errToMessage(err));
+    }
+  } else if (row.channel === "sms") {
+    const to =
+      (lead.data?.phone as string | undefined) ??
+      (lead.data?.contact_phone as string | undefined);
+    if (!to)
+      return {
+        ok: false,
+        reason: "missing_recipient",
+        message: "no phone on lead",
       };
-      if (typeof maybeRegisterable.registerTemplate === "function") {
-        registerFollowUpDltTemplates({
-          registerTemplate: maybeRegisterable.registerTemplate.bind(adapter),
-        });
-      }
-      const r = await adapter.send({
+    const resolved = await resolveOrgAdapter(
+      "sms",
+      row.organization_id,
+      client,
+      FOLLOW_UP_DLT_TEMPLATE_IDS,
+    );
+    if (!resolved.ok) {
+      return resolved.reason === "not_configured"
+        ? deferred("sms")
+        : recordSendFailure("sms", "unresolved", resolved.message);
+    }
+    provider = resolved.provider;
+    try {
+      const r = await resolved.adapter.send({
         kind: "templated",
         organization_id: row.organization_id,
         template_id: FOLLOW_UP_DLT_TEMPLATES[0]!.id,
@@ -172,38 +213,85 @@ export async function dispatchApprovedDraft(
         data: { name: deriveFirstName(lead.label), body },
       });
       providerMessageId = r.provider_message_id;
-    } else {
-      // exhaustive check; whatsapp already returned above
-      return { ok: false, reason: "not_configured" };
+    } catch (err) {
+      return recordSendFailure("sms", provider, errToMessage(err));
     }
-  } catch (err) {
-    const message =
-      err instanceof CommsError
-        ? `${err.kind}: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : "Unknown send error";
-    await client
-      .from("agent_approval_queue")
-      .update({
-        send_error: message.slice(0, 500),
-      })
-      .eq("id", row.id)
-      .eq("organization_id", row.organization_id);
-    await client.from("audit_log").insert({
-      actor_id: args.actor_id,
-      actor_type: "user",
-      actor_role: "org_admin",
-      organization_id: row.organization_id,
-      table_name: "agent_approval_queue",
-      record_id: row.id,
-      action: "agent_draft_send_failed",
-      diff: { channel: row.channel, provider, reason: message },
-    });
-    return { ok: false, reason: "provider_error", message };
+  } else if (row.channel === "whatsapp") {
+    const to =
+      (lead.data?.phone as string | undefined) ??
+      (lead.data?.contact_phone as string | undefined);
+    if (!to)
+      return {
+        ok: false,
+        reason: "missing_recipient",
+        message: "no phone on lead",
+      };
+    const resolved = await resolveOrgAdapter(
+      "whatsapp",
+      row.organization_id,
+      client,
+    );
+    if (!resolved.ok) {
+      return resolved.reason === "not_configured"
+        ? deferred("whatsapp")
+        : recordSendFailure("whatsapp", "unresolved", resolved.message);
+    }
+    provider = resolved.provider;
+
+    // D-600 — brochure_send rows carry brochure refs in `attachments`.
+    // Resolve FRESH 1h signed URLs at dispatch time (queue-time URLs would
+    // be stale by the time an operator approves) and append them to the
+    // body. A brochure deleted since queue-time resolves to nothing and is
+    // silently skipped — never a dead link.
+    let waBody = body;
+    const attachments = Array.isArray(row.attachments) ? row.attachments : [];
+    if (attachments.length > 0) {
+      const links: string[] = [];
+      for (const att of attachments) {
+        const ref = att as { brochure_id?: unknown; title?: unknown };
+        if (typeof ref.brochure_id !== "string") continue;
+        const signed = await getBrochureSignedUrl(
+          row.organization_id,
+          ref.brochure_id,
+          client,
+        );
+        if (signed.ok) links.push(`${signed.title}: ${signed.url}`);
+      }
+      if (links.length > 0) waBody = `${body}\n\n${links.join("\n")}`;
+    }
+
+    const tpl = FOLLOW_UP_WA_TEMPLATES[0]!;
+    try {
+      const r = await resolved.adapter.send({
+        kind: "template",
+        organization_id: row.organization_id,
+        template_id: tpl.id,
+        to_phone_e164: to,
+        language_code: tpl.language_code,
+        data: { name: deriveFirstName(lead.label), body: waBody },
+      });
+      providerMessageId = r.provider_message_id;
+    } catch (err) {
+      // template_not_found means the org has not approved the follow-up
+      // template — a setup gap with the same operator remediation as
+      // "not configured", so route it to the deferred UX, not a hard error.
+      if (err instanceof CommsError && err.kind === "template_not_found") {
+        return deferred("whatsapp");
+      }
+      return recordSendFailure("whatsapp", provider, errToMessage(err));
+    }
+  } else {
+    // Unreachable — the three channels above exhaust row.channel. The
+    // `never` binding turns a new channel into a compile error.
+    const exhaustive: never = row.channel;
+    return {
+      ok: false,
+      reason: "not_configured",
+      message: String(exhaustive),
+    };
   }
 
-  // 5. Activity node + edge.
+  // 4. Activity node + edge.
   const actIns = await client
     .from("nodes")
     .insert({
@@ -251,7 +339,7 @@ export async function dispatchApprovedDraft(
     updated_via: "system",
   });
 
-  // 6. Mark sent on the queue row.
+  // 5. Mark sent on the queue row.
   await client
     .from("agent_approval_queue")
     .update({
@@ -264,7 +352,7 @@ export async function dispatchApprovedDraft(
     .eq("id", row.id)
     .eq("organization_id", row.organization_id);
 
-  // 7. Audit.
+  // 6. Audit.
   await client.from("audit_log").insert({
     actor_id: args.actor_id,
     actor_type: "user",

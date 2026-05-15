@@ -20,6 +20,9 @@ export default async function LeadCanvasPage(props: {
   const canEdit = perms.has("leads:edit" as never);
   const canTransition = canEdit;
   const canPromoteToDeal = perms.has("deals:create" as never);
+  // D-609 — click-to-call on the canvas, gated on calls:listen.
+  const canCall = perms.has("calls:listen" as never);
+  const repPhone = user?.profile.phone ?? null;
 
   return (
     <div className="space-y-3">
@@ -33,6 +36,8 @@ export default async function LeadCanvasPage(props: {
         initialActivities={data.activities}
         canEdit={canEdit}
         canTransition={canTransition}
+        canCall={canCall}
+        repPhone={repPhone}
         customFields={<CustomFieldsBlock lead={data.lead} />}
       />
     </div>

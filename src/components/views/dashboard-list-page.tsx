@@ -51,6 +51,12 @@ export type DashboardListPageConfig = {
 export async function DashboardListPage(props: {
   config: DashboardListPageConfig;
   searchParams: { view?: string; page?: string };
+  /**
+   * D-617 — ad-hoc filters (e.g. from a Cmd+K `?canned=` shortcut). Merged
+   * AFTER the selected view's filters by listNodesByView, so they stack
+   * (AND) on top of any active view.
+   */
+  adHocFilters?: import("@/lib/views/types").FilterClause[];
 }) {
   const cfg = props.config;
   const user = await getCurrentUser();
@@ -107,6 +113,7 @@ export async function DashboardListPage(props: {
     entity_type: cfg.entity_type,
     view: resolved,
     available_custom_field_keys: availableCustomFieldKeys,
+    ad_hoc_filters: props.adHocFilters,
     page,
     page_size: cfg.page_size ?? 50,
   });

@@ -14,6 +14,7 @@ import { SchemaMismatch } from "./schema-mismatch";
 import { EditModeButton } from "./edit-mode-button";
 import { EditLeadForm } from "./edit-lead-form";
 import { TransitionFooter } from "./transition-footer";
+import { ClickToCallButton } from "./click-to-call-button";
 
 type Props = {
   lead: CanvasLead;
@@ -24,6 +25,12 @@ type Props = {
   canEdit?: boolean;
   /** When true, renders the TransitionFooter with state-machine buttons. */
   canTransition?: boolean;
+  /** D-609 — when true, renders the click-to-call control in the header.
+   *  The page sets this from the caller's `calls:listen` permission. */
+  canCall?: boolean;
+  /** D-609 — the caller's own phone (profiles.phone). Null prompts a
+   *  "set your phone in Settings" nudge instead of a live Call button. */
+  repPhone?: string | null;
   suggestedAction?: ReactNode;
   agentActivity?: ReactNode;
   /**
@@ -50,6 +57,8 @@ export function LeadCanvas(props: Props) {
     demo = false,
     canEdit = false,
     canTransition = false,
+    canCall = false,
+    repPhone = null,
     suggestedAction,
     agentActivity,
     customFields,
@@ -93,6 +102,17 @@ export function LeadCanvas(props: Props) {
                   />
                 ) : null}
               </div>
+              {canCall ? (
+                <div className="mt-3">
+                  <ClickToCallButton
+                    leadId={lead.id}
+                    leadHasPhone={Boolean(
+                      (lead.data as Record<string, unknown>).phone,
+                    )}
+                    repPhone={repPhone}
+                  />
+                </div>
+              ) : null}
             </CanvasSection>
             {leadValid ? (
               <CanvasSection delay={0.05} testId="section-fields">

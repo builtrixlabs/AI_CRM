@@ -1,4 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// D-614 — enqueueFollowUpDraft calls dispatchApprovedDraft on the
+// auto_send path. Mock it; dispatch internals are covered by their own suite.
+const mocks = vi.hoisted(() => ({
+  dispatchApprovedDraft: vi.fn(),
+}));
+vi.mock("@/lib/agents/follow-up/dispatch", () => ({
+  dispatchApprovedDraft: mocks.dispatchApprovedDraft,
+  FOLLOW_UP_SERVICE_ACCOUNT: "00000000-0000-4000-8000-000000000002",
+}));
+
 import {
   AGENT_KIND,
   STALE_THRESHOLD_DAYS,
@@ -6,6 +17,10 @@ import {
   enqueueFollowUpDraft,
   findStaleLeads,
 } from "@/lib/agents/follow-up-stale-lead";
+
+beforeEach(() => {
+  mocks.dispatchApprovedDraft.mockReset();
+});
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 
@@ -131,25 +146,37 @@ describe("enqueueFollowUpDraft", () => {
     insert_error?: { code?: string; message?: string };
   }) {
     const inserts: unknown[] = [];
+    const updates: unknown[] = [];
+    const builder = {
+      insert: vi.fn((row: unknown) => {
+        inserts.push(row);
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn(() =>
+              Promise.resolve({
+                data: opts.insert_error ? null : { id: "queue-1" },
+                error: opts.insert_error ?? null,
+              })
+            ),
+          })),
+        };
+      }),
+      // D-614 auto_send promotes the pending row to approved.
+      update: vi.fn((patch: unknown) => {
+        updates.push(patch);
+        const ub: Record<string, unknown> = {};
+        Object.assign(ub, {
+          eq: vi.fn(() => ub),
+          then: (onF: (v: { data: null; error: null }) => unknown) =>
+            Promise.resolve({ data: null, error: null }).then(onF),
+        });
+        return ub;
+      }),
+    };
     return {
       inserts,
-      client: {
-        from: vi.fn(() => ({
-          insert: vi.fn((row: unknown) => {
-            inserts.push(row);
-            return {
-              select: vi.fn(() => ({
-                single: vi.fn(() =>
-                  Promise.resolve({
-                    data: opts.insert_error ? null : { id: "queue-1" },
-                    error: opts.insert_error ?? null,
-                  })
-                ),
-              })),
-            };
-          }),
-        })),
-      },
+      updates,
+      client: { from: vi.fn(() => builder) },
     };
   }
 
@@ -166,7 +193,7 @@ describe("enqueueFollowUpDraft", () => {
   it("inserts a pending row with the right shape", async () => {
     const env = makeInsertClient({});
     const r = await enqueueFollowUpDraft(LEAD, env.client as never);
-    expect(r).toEqual({ ok: true, queue_id: "queue-1" });
+    expect(r).toEqual({ ok: true, queue_id: "queue-1", dispatched: false });
     expect(env.inserts).toHaveLength(1);
     const row = env.inserts[0] as {
       organization_id: string;
@@ -195,5 +222,56 @@ describe("enqueueFollowUpDraft", () => {
     });
     const r = await enqueueFollowUpDraft(LEAD, env.client as never);
     expect(r).toEqual({ ok: false, error: "kaboom" });
+  });
+
+  // ── D-614 send policy ────────────────────────────────────────────────
+  it("under require_approval (the default): inserts pending, no dispatch", async () => {
+    const env = makeInsertClient({});
+    const r = await enqueueFollowUpDraft(
+      LEAD,
+      env.client as never,
+      "require_approval",
+    );
+    expect(r).toEqual({ ok: true, queue_id: "queue-1", dispatched: false });
+    expect(env.updates).toHaveLength(0);
+    expect(mocks.dispatchApprovedDraft).not.toHaveBeenCalled();
+  });
+
+  it("under auto_send: promotes the row to approved and dispatches (AC-4)", async () => {
+    const env = makeInsertClient({});
+    mocks.dispatchApprovedDraft.mockResolvedValue({
+      ok: true,
+      status: "sent",
+      provider: "mock",
+      provider_message_id: "m",
+      activity_id: "a",
+    });
+    const r = await enqueueFollowUpDraft(
+      LEAD,
+      env.client as never,
+      "auto_send",
+    );
+    expect(r).toEqual({ ok: true, queue_id: "queue-1", dispatched: true });
+    expect(env.updates).toHaveLength(1);
+    expect((env.updates[0] as { status: string }).status).toBe("approved");
+    expect(mocks.dispatchApprovedDraft).toHaveBeenCalledOnce();
+  });
+
+  it("under auto_send: a dispatch failure still returns ok with dispatched=false", async () => {
+    const env = makeInsertClient({});
+    mocks.dispatchApprovedDraft.mockResolvedValue({
+      ok: false,
+      reason: "not_configured",
+      message: "whatsapp",
+    });
+    const r = await enqueueFollowUpDraft(
+      LEAD,
+      env.client as never,
+      "auto_send",
+    );
+    expect(r).toEqual({ ok: true, queue_id: "queue-1", dispatched: false });
+    // The row was still promoted to approved — it surfaces in the queue
+    // with send_error for the operator to retry (the D-415 contract).
+    expect(env.updates).toHaveLength(1);
   });
 });

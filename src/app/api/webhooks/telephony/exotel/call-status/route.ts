@@ -25,6 +25,10 @@ import * as crypto from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { decryptJson } from "@/lib/comms/encryption";
 import type { ExotelCredentials } from "@/lib/comms/telephony/providers/exotel";
+import {
+  mapExotelStatus,
+  recordCallStatusUpdate,
+} from "@/lib/comms/telephony/click-to-call";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -77,6 +81,7 @@ export async function POST(req: Request) {
   const ctype = req.headers.get("content-type") ?? "";
   let callSid: string | null = null;
   let callStatus = "";
+  let callDuration: number | null = null;
   if (ctype.includes("application/json")) {
     const data = (await req.json().catch(() => ({}))) as Record<
       string,
@@ -84,20 +89,36 @@ export async function POST(req: Request) {
     >;
     callSid = (data["CallSid"] as string | undefined) ?? null;
     callStatus = String(data["Status"] ?? "").toLowerCase();
+    callDuration = parseDuration(data["Duration"]);
   } else {
     const body = await req.text();
     const params = new URLSearchParams(body);
     callSid = params.get("CallSid");
     callStatus = (params.get("Status") ?? "").toLowerCase();
+    callDuration = parseDuration(params.get("Duration"));
   }
 
-  // Scaffolding — log + return 200. Full activity-stream wiring lands in
-  // a follow-up directive.
-  console.info("[exotel-webhook]", {
-    orgId,
-    callSid,
-    callStatus,
+  // D-609 — wire the parsed status to the lead's call activity node. An
+  // unknown CallSid (a call placed out-of-band, or a webhook replay) is a
+  // benign 200 — recordCallStatusUpdate no-ops on no match.
+  if (!callSid) {
+    return NextResponse.json({ ok: true, updated: false });
+  }
+  const update = await recordCallStatusUpdate({
+    organization_id: orgId,
+    provider_call_id: callSid,
+    status: mapExotelStatus(callStatus),
+    duration_s: callDuration,
   });
+  return NextResponse.json({ ok: true, updated: update.updated });
+}
 
-  return NextResponse.json({ ok: true });
+function parseDuration(raw: unknown): number | null {
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? parseInt(raw, 10)
+        : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }

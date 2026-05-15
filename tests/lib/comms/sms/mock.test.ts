@@ -50,4 +50,30 @@ describe("MockSmsProvider", () => {
       }),
     ).rejects.toBeInstanceOf(CommsError);
   });
+
+  it("seed constructor pre-fills the DLT registry without registerTemplate", async () => {
+    const seeded = new MockSmsProvider(new Set(["follow_up_default"]));
+    const r = await seeded.send({
+      kind: "templated",
+      organization_id: "org-1",
+      template_id: "follow_up_default",
+      to_phone_e164: "+919900011111",
+      data: { name: "Patel" },
+    });
+    expect(r.template_id).toBe("follow_up_default");
+    expect(seeded.getOutbox()).toHaveLength(1);
+  });
+
+  it("no-arg constructor still starts with an empty registry", async () => {
+    const empty = new MockSmsProvider();
+    await expect(
+      empty.send({
+        kind: "templated",
+        organization_id: "org-1",
+        template_id: "follow_up_default",
+        to_phone_e164: "+919900011111",
+        data: {},
+      }),
+    ).rejects.toMatchObject({ kind: "template_not_found" });
+  });
 });

@@ -20,7 +20,14 @@ export class MockSmsProvider implements SmsAdapter {
   };
 
   private outbox: Recorded[] = [];
-  private dltTemplates = new Set<string>();
+  private dltTemplates: Set<string>;
+
+  // `seed` pre-fills the DLT registry so a mock instantiated via
+  // instantiateSmsAdapter(row, allowed_templates) behaves like the real
+  // MSG91 adapter, which takes its allowed templates at construction.
+  constructor(seed?: ReadonlySet<string>) {
+    this.dltTemplates = new Set(seed);
+  }
 
   async send(args: SmsSendArgs): Promise<SmsSendResult> {
     if (!args.to_phone_e164 || !args.organization_id) {

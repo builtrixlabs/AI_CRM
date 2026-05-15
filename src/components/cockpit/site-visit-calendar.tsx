@@ -6,9 +6,12 @@ import {
 } from "@/lib/sitevisits/calendar-types";
 
 const STATE_TINT: Record<SiteVisitState, string> = {
+  draft: "border-slate-300 bg-slate-50 text-slate-600",
   scheduled: "border-blue-300 bg-blue-50 text-blue-900",
   confirmed: "border-emerald-300 bg-emerald-50 text-emerald-900",
+  in_progress: "border-amber-300 bg-amber-50 text-amber-900",
   completed: "border-neutral-300 bg-neutral-50 text-neutral-900",
+  cancelled: "border-neutral-300 bg-neutral-100 text-neutral-500",
   no_show: "border-red-300 bg-red-50 text-red-900",
 };
 

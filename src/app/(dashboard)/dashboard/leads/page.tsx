@@ -1,11 +1,18 @@
 import { DashboardListPage } from "@/components/views/dashboard-list-page";
+import { cannedLeadFilters } from "@/lib/leads/canned-views";
 
 export const dynamic = "force-dynamic";
 
 export default async function LeadsListPage(props: {
-  searchParams: Promise<{ view?: string; page?: string }>;
+  searchParams: Promise<{ view?: string; page?: string; canned?: string }>;
 }) {
   const sp = await props.searchParams;
+  // D-617 — a Cmd+K `?canned=<slug>` shortcut applies a built-in filter
+  // on top of any selected view.
+  const adHocFilters = sp.canned
+    ? (cannedLeadFilters(sp.canned) ?? undefined)
+    : undefined;
+
   return (
     <DashboardListPage
       config={{
@@ -21,6 +28,7 @@ export default async function LeadsListPage(props: {
         ],
       }}
       searchParams={sp}
+      adHocFilters={adHocFilters}
     />
   );
 }

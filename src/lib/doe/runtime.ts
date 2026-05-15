@@ -39,6 +39,8 @@ export async function loadActiveDirectives(
     )
     .eq("trigger_kind", trigger_kind)
     .eq("enabled", true)
+    // D-615 — a pending_approval / archived workflow is runtime-inert.
+    .eq("lifecycle_status", "live")
     .is("deleted_at", null);
 
   if (error || !data) return [];
