@@ -18,6 +18,8 @@ import {
   type BrochureMatchCriteria,
 } from "@/lib/brochures/repository";
 import type { DocumentType } from "@/lib/brochures/schemas";
+import { resolveSendPolicy } from "./send-policy";
+import { dispatchApprovedDraft } from "./follow-up/dispatch";
 
 export const BROCHURE_AGENT_KIND = "brochure_send";
 
@@ -195,19 +197,11 @@ export async function draftBrochureMessage(
   }
 }
 
-/**
- * D-614 seam. `agent_message_policies` (D-614, step 2.5) is not built
- * yet, so this is a constant `require_approval` — D-600 always queues for
- * operator approval. D-614 replaces the body with the real per-org policy
- * lookup; `runBrochureAgent` already branches on the return value.
- */
-export async function resolveSendPolicy(
-  _organization_id: string,
-  _agent_kind: string,
-  _client?: SupabaseClient,
-): Promise<"auto_send" | "require_approval"> {
-  return "require_approval";
-}
+// D-614 — resolveSendPolicy now lives in ./send-policy.ts (the follow-up
+// agent needs it too; a follow-up agent importing from brochure-agent.ts
+// would be a wrong-way dependency). Re-exported here so any pre-existing
+// `@/lib/agents/brochure-agent` import path still resolves.
+export { resolveSendPolicy };
 
 // ── Agent entry point ──────────────────────────────────────────────────────
 
@@ -219,7 +213,14 @@ export type RunBrochureAgentInput = {
 };
 
 export type RunBrochureAgentResult =
-  | { ok: true; queue_id: string; matched: boolean; brochure_id: string | null }
+  | {
+      ok: true;
+      queue_id: string;
+      matched: boolean;
+      brochure_id: string | null;
+      /** D-614 — true when the org's policy auto-sent the draft immediately. */
+      dispatched: boolean;
+    }
   | { ok: true; skipped: "not_brochure_action" | "already_pending" }
   | { ok: false; error: "lead_not_found" | "enqueue_failed"; message?: string };
 
@@ -305,12 +306,22 @@ export async function runBrochureAgent(
     error = "no_match";
   }
 
-  // 4. D-614 seam — always 'require_approval' in D-600.
-  await resolveSendPolicy(input.organization_id, BROCHURE_AGENT_KIND, client);
+  // 4. Resolve the send policy (D-614). A no_match row is never auto-sent —
+  //    the "upload a brochure" copy must not reach a customer — so the
+  //    policy lookup only matters when a brochure actually matched.
+  const policy = best
+    ? await resolveSendPolicy(
+        input.organization_id,
+        BROCHURE_AGENT_KIND,
+        client,
+      )
+    : "require_approval";
 
-  // 5. Enqueue. Idempotent at the DB layer via the partial unique index on
-  //    (organization_id, lead_id, agent_kind) WHERE status='pending' — a
-  //    duplicate while one is pending is a benign 23505.
+  // 5. Enqueue as pending. Idempotent at the DB layer via the partial
+  //    unique index on (organization_id, lead_id, agent_kind) WHERE
+  //    status='pending' — a duplicate while one is pending is a benign
+  //    23505. auto_send promotes the row in step 6; it is still inserted
+  //    pending first so the idempotency guard holds.
   const { data: inserted, error: insErr } = await client
     .from("agent_approval_queue")
     .insert({
@@ -336,11 +347,40 @@ export async function runBrochureAgent(
     }
     return { ok: false, error: "enqueue_failed", message: insErr.message };
   }
+  const queue_id = (inserted as { id: string }).id;
+
+  // 6. auto_send (D-614) — promote the row to approved (decided_by = the
+  //    brochure agent service account, so provenance is preserved) and
+  //    dispatch immediately. A dispatch failure leaves the row approved
+  //    with send_error (dispatchApprovedDraft's D-415 retry contract) — it
+  //    surfaces in the queue for the operator, never a silent drop.
+  let dispatched = false;
+  if (policy === "auto_send") {
+    await client
+      .from("agent_approval_queue")
+      .update({
+        status: "approved",
+        decided_at: new Date().toISOString(),
+        decided_by: BROCHURE_AGENT_SERVICE_ACCOUNT,
+      })
+      .eq("id", queue_id)
+      .eq("organization_id", input.organization_id);
+    const sent = await dispatchApprovedDraft(
+      {
+        queue_id,
+        organization_id: input.organization_id,
+        actor_id: BROCHURE_AGENT_SERVICE_ACCOUNT,
+      },
+      client,
+    );
+    dispatched = sent.ok;
+  }
 
   return {
     ok: true,
-    queue_id: (inserted as { id: string }).id,
+    queue_id,
     matched: best !== null,
     brochure_id: best?.id ?? null,
+    dispatched,
   };
 }

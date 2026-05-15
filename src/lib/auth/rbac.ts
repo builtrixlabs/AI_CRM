@@ -46,6 +46,8 @@ export const PERMISSIONS = [
   "agents:approve_T3",
   "agents:suspend",
   "agents:view_activity",
+  // D-614 — configure the per-agent-kind auto-send vs require-approval policy.
+  "agents:manage_policies",
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
@@ -198,6 +200,10 @@ const MANAGER_OPERATIONAL: Permission[] = [
   // D-607 — managers upload brochures to the repository (cascades to
   // workspace_admin).
   "brochures:upload",
+  // D-615 — managers author AI workflows; a manager-authored workflow
+  // lands pending_approval (runtime-inert) until an org admin approves.
+  // Cascades to workspace_admin.
+  "directives:author",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -241,6 +247,8 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "agents:provision",
   "agents:suspend",
   "agents:view_activity",
+  // D-614 — org admin owns the agent send-policy surface.
+  "agents:manage_policies",
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
