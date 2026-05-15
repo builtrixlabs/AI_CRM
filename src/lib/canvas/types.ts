@@ -31,3 +31,36 @@ export type CanvasData = {
   lead: CanvasLead;
   activities: CanvasActivity[];
 };
+
+/** v6.2.1 — per-tab badge counts surfaced on the split-pane canvas v2. */
+export type CanvasTabCounts = {
+  updates: number;
+  ai_drafts: number;
+  chats: number;
+  calls: number;
+  emails: number;
+  comments: number;
+  appointments: number;
+  documents: number;
+};
+
+/** v6.2.1 — a queue row for the AI Drafts tab. Schema mirrors DraftCardItem. */
+export type PendingDraft = {
+  id: string;
+  lead_id: string;
+  agent_kind: string;
+  channel: "whatsapp" | "email" | "sms";
+  draft_body: string;
+  created_at: string;
+  attachments: Array<{
+    brochure_id: string;
+    title: string;
+    document_type: string;
+  }>;
+  error: string | null;
+};
+
+export type CanvasDataV2 = CanvasData & {
+  tab_counts: CanvasTabCounts;
+  pending_drafts: PendingDraft[];
+};

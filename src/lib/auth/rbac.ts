@@ -48,6 +48,12 @@ export const PERMISSIONS = [
   "agents:view_activity",
   // D-614 — configure the per-agent-kind auto-send vs require-approval policy.
   "agents:manage_policies",
+  // v6.2.1 — sales rep approves AI drafts for leads they own. Owner-scoped:
+  // enforced by canApproveQueueItem (reads nodes.data.assigned_sales_rep_id),
+  // not by RLS. Cascades into SALES_REP_OPERATIONAL → all phone-rep roles +
+  // manager / workspace_admin. Skipped on ORG_ADMIN_PLANE (org admins already
+  // hold agents:view_activity).
+  "agents:approve_own_leads",
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
@@ -179,6 +185,10 @@ const SALES_REP_OPERATIONAL: Permission[] = [
   "notes:create",
   "notes:edit",
   "documents:upload",
+  // v6.2.1 — approve AI-drafted comms on leads this rep owns. Enforced via
+  // canApproveQueueItem owner check; sales reps without ownership see drafts
+  // but cannot approve.
+  "agents:approve_own_leads",
 ];
 
 const MANAGER_OPERATIONAL: Permission[] = [
@@ -204,6 +214,11 @@ const MANAGER_OPERATIONAL: Permission[] = [
   // lands pending_approval (runtime-inert) until an org admin approves.
   // Cascades to workspace_admin.
   "directives:author",
+  // v6.2.1 — managers get the team rollup view of the agent approval queue
+  // and can approve any draft within their org (cross-team). This also opens
+  // /admin/agents/queue to managers, matching the spec's "Manager rollup view"
+  // evolution of that route.
+  "agents:view_activity",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [

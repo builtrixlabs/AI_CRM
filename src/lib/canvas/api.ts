@@ -1,7 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { leadSchema } from "@/lib/nodes/schemas/lead";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AgentTier, CanvasActivity, CanvasData, CanvasLead } from "./types";
+import type {
+  AgentTier,
+  CanvasActivity,
+  CanvasData,
+  CanvasDataV2,
+  CanvasLead,
+  CanvasTabCounts,
+  PendingDraft,
+} from "./types";
 import {
   ACTIVITY_EDGE_TYPES,
   DEFAULT_ACTIVITY_LIMIT,
@@ -186,4 +194,179 @@ export async function getLeadCanvas(
   );
 
   return { lead, activities };
+}
+
+// ── v6.2.1 — split-pane canvas data ─────────────────────────────────────────
+
+type PendingDraftRow = {
+  id: string;
+  lead_id: string;
+  agent_kind: string;
+  channel: string;
+  draft_body: string;
+  created_at: string;
+  attachments: unknown;
+  error: string | null;
+};
+
+function bucketActivity(d: unknown): "chat" | "call" | "email" | "other" {
+  if (!d || typeof d !== "object") return "other";
+  const data = d as Record<string, unknown>;
+  const kind = typeof data.kind === "string" ? data.kind : null;
+  const channel = typeof data.channel === "string" ? data.channel : null;
+  if (kind === "call_initiated" || kind === "call_completed") return "call";
+  if (kind === "comms_sent" && channel === "whatsapp") return "chat";
+  if (kind === "comms_sent" && channel === "sms") return "chat";
+  if (kind === "comms_sent" && channel === "email") return "email";
+  return "other";
+}
+
+/**
+ * v6.2.1 — extended canvas fetch for the split-pane layout.
+ *
+ * Returns everything `getLeadCanvas` does, PLUS:
+ *   - per-tab badge counts (8 tabs)
+ *   - pending AI draft rows for the AI Drafts tab
+ *
+ * Implementation notes:
+ *   - Counts are derived from the activity stream by inspecting
+ *     `data.kind` / `data.channel`. We don't have separate `chat_log`
+ *     / `email_log` tables yet — everything lives in `nodes.activity`
+ *     keyed by `data.kind`.
+ *   - Site visits and documents queries are wrapped in a graceful
+ *     try/catch via `safeCount` so a schema gap returns 0 instead of
+ *     killing the whole canvas render.
+ *   - `pending_drafts` is capped at 50 rows (well above the realistic
+ *     pending count on a single lead).
+ */
+async function safeCount(
+  thenable: PromiseLike<{ count: number | null; error: unknown }>,
+): Promise<number> {
+  try {
+    const r = await thenable;
+    if (r.error) return 0;
+    return typeof r.count === "number" ? r.count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function coerceChannel(
+  raw: string,
+): "whatsapp" | "email" | "sms" {
+  if (raw === "whatsapp") return "whatsapp";
+  if (raw === "sms") return "sms";
+  return "email";
+}
+
+function coerceAttachments(
+  raw: unknown,
+): PendingDraft["attachments"] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (a): a is { brochure_id: string; title: string; document_type: string } =>
+        !!a &&
+        typeof a === "object" &&
+        typeof (a as { brochure_id?: unknown }).brochure_id === "string" &&
+        typeof (a as { title?: unknown }).title === "string" &&
+        typeof (a as { document_type?: unknown }).document_type === "string",
+    );
+}
+
+export async function getLeadCanvasV2(
+  lead_id: string,
+  client?: SupabaseClient,
+): Promise<CanvasDataV2 | null> {
+  const base = await getLeadCanvas(lead_id, client);
+  if (!base) return null;
+  if (!UUID_RE.test(lead_id)) return null;
+
+  const supabase = client ?? (await createSupabaseServerClient());
+  const org_id = base.lead.organization_id;
+
+  // Bucket the activity stream into chats / calls / emails for badge counts.
+  let chats = 0;
+  let calls = 0;
+  let emails = 0;
+  for (const a of base.activities) {
+    const bucket = bucketActivity(a.data);
+    if (bucket === "chat") chats += 1;
+    else if (bucket === "call") calls += 1;
+    else if (bucket === "email") emails += 1;
+  }
+
+  // Pending drafts (the AI Drafts tab's data source).
+  const draftsResult = await supabase
+    .from("agent_approval_queue")
+    .select(
+      "id, lead_id, agent_kind, channel, draft_body, created_at, attachments, error",
+    )
+    .eq("lead_id", lead_id)
+    .eq("organization_id", org_id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const draftRows = (draftsResult.data ?? []) as PendingDraftRow[];
+  const pending_drafts: PendingDraft[] = draftRows.map((r) => ({
+    id: r.id,
+    lead_id: r.lead_id,
+    agent_kind: r.agent_kind,
+    channel: coerceChannel(r.channel),
+    draft_body: r.draft_body,
+    created_at: r.created_at,
+    attachments: coerceAttachments(r.attachments),
+    error: r.error,
+  }));
+
+  // Counts from related node tables. Each wrapped via safeCount so a
+  // schema-not-yet-shipped table (e.g. comments) degrades to 0 instead of
+  // failing the whole canvas render.
+  const [appointments, documents, comments] = await Promise.all([
+    safeCount(
+      supabase
+        .from("nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", org_id)
+        .eq("node_type", "site_visit")
+        .is("deleted_at", null)
+        // site_visit ↔ lead linkage lives on data.lead_id for v6 visits.
+        .filter("data->>lead_id", "eq", lead_id),
+    ),
+    safeCount(
+      supabase
+        .from("nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", org_id)
+        .eq("node_type", "document")
+        .is("deleted_at", null)
+        .filter("data->>lead_id", "eq", lead_id),
+    ),
+    safeCount(
+      supabase
+        .from("nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", org_id)
+        .eq("node_type", "comment")
+        .is("deleted_at", null)
+        .filter("data->>lead_id", "eq", lead_id),
+    ),
+  ]);
+
+  const tab_counts: CanvasTabCounts = {
+    updates: base.activities.length,
+    ai_drafts: pending_drafts.length,
+    chats,
+    calls,
+    emails,
+    comments,
+    appointments,
+    documents,
+  };
+
+  return {
+    ...base,
+    tab_counts,
+    pending_drafts,
+  };
 }

@@ -5,6 +5,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { submitSiteVisitBookingAction } from "@/app/(admin)/admin/agents/queue/actions";
 
+/** Wire-compatible with the admin SiteVisitBookingActionResult and the
+ *  v6.2.1 owner-scoped equivalent. */
+export type SiteVisitBookingResult =
+  | { ok: true; dispatch: "sent" | "deferred"; assigned: boolean }
+  | { ok: false; error: string; message?: string };
+
 type FormState = {
   scheduled_at: string;
   pickup_address: string;
@@ -41,16 +47,30 @@ const inputCls = "h-8 w-full rounded border border-neutral-300 px-2 text-sm";
  * operator enters the cab details; submit transitions the draft visit to
  * scheduled, auto-assigns the project's sales rep, and dispatches the
  * customer WhatsApp confirmation.
+ *
+ * v6.2.1 — `onSubmit` is now injectable so the same card serves both
+ *   - /admin/agents/queue  (default: org-admin gated submitSiteVisitBookingAction)
+ *   - lead canvas AI Drafts tab (owner-scoped action)
+ * `canSubmit=false` renders all inputs + the submit button disabled
+ * (used when a non-owner views the draft).
  */
+export type SiteVisitBookingCardProps = {
+  queueId: string;
+  leadId: string;
+  leadLabel: string;
+  onSubmit?: (queueId: string, cab: unknown) => Promise<SiteVisitBookingResult>;
+  canSubmit?: boolean;
+  disabledReason?: string;
+};
+
 export function SiteVisitBookingCard({
   queueId,
   leadId,
   leadLabel,
-}: {
-  queueId: string;
-  leadId: string;
-  leadLabel: string;
-}) {
+  onSubmit,
+  canSubmit = true,
+  disabledReason,
+}: SiteVisitBookingCardProps) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -95,19 +115,23 @@ export function SiteVisitBookingCard({
       return;
     }
 
+    const cab = {
+      scheduled_at,
+      pickup_time,
+      pickup_address: form.pickup_address.trim(),
+      cab_provider: form.cab_provider.trim(),
+      ...(form.cab_booking_ref.trim()
+        ? { cab_booking_ref: form.cab_booking_ref.trim() }
+        : {}),
+      driver_name: form.driver_name.trim(),
+      driver_phone: form.driver_phone.trim(),
+      vehicle_number: form.vehicle_number.trim(),
+    };
+
+    const submitFn = onSubmit ?? submitSiteVisitBookingAction;
+
     startTransition(async () => {
-      const r = await submitSiteVisitBookingAction(queueId, {
-        scheduled_at,
-        pickup_time,
-        pickup_address: form.pickup_address.trim(),
-        cab_provider: form.cab_provider.trim(),
-        ...(form.cab_booking_ref.trim()
-          ? { cab_booking_ref: form.cab_booking_ref.trim() }
-          : {}),
-        driver_name: form.driver_name.trim(),
-        driver_phone: form.driver_phone.trim(),
-        vehicle_number: form.vehicle_number.trim(),
-      });
+      const r = await submitFn(queueId, cab);
       if (!r.ok) {
         setError(r.message ?? r.error);
         return;
@@ -234,12 +258,21 @@ export function SiteVisitBookingCard({
         <Button
           type="button"
           size="sm"
-          disabled={pending}
+          disabled={pending || !canSubmit}
           onClick={submit}
+          title={!canSubmit ? (disabledReason ?? undefined) : undefined}
           data-testid={`site-visit-booking-submit-${queueId}`}
         >
           {pending ? "Booking…" : "Confirm booking"}
         </Button>
+        {!canSubmit && disabledReason && (
+          <p
+            className="text-xs text-neutral-500"
+            data-testid={`site-visit-booking-disabled-${queueId}`}
+          >
+            {disabledReason}
+          </p>
+        )}
         {error && (
           <p
             className="text-xs text-red-600"
