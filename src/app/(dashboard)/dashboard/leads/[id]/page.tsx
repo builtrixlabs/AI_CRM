@@ -46,6 +46,7 @@ export default async function LeadCanvasPage(props: {
         isOwner={is_owner}
         canEdit={perms.has("leads:edit" as never)}
         canCall={perms.has("calls:listen" as never)}
+        canComment={perms.has("notes:create" as never)}
         canPromoteToDeal={perms.has("deals:create" as never)}
         repPhone={user?.profile.phone ?? null}
       />

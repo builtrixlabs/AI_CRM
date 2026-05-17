@@ -5,19 +5,28 @@ import Link from "next/link";
 import type { CanvasDataV2 } from "@/lib/canvas/types";
 import { TabStrip, type TabId } from "./tabs/tab-strip";
 import { AiDraftsTab } from "./tabs/ai-drafts-tab";
+import { UpdatesTab } from "./tabs/updates-tab";
+import { ChatsTab } from "./tabs/chats-tab";
+import { CallsTab } from "./tabs/calls-tab";
+import { EmailsTab } from "./tabs/emails-tab";
+import { CommentsTab } from "./tabs/comments-tab";
+import { AppointmentsTab } from "./tabs/appointments-tab";
+import { DocumentsTab } from "./tabs/documents-tab";
+import { LeadLeftPane } from "./left-pane/lead-left-pane";
+import { QuickActionButton } from "./quick-action/quick-action-button";
 
 /**
  * v6.2.1 — split-pane lead canvas shell.
  *
- * Left pane (320 px fixed): lead fields, Voice IQ summary, action strip.
- *   - Placeholder in Step 4; fully populated in Step 8.
+ * Left pane (320 px fixed): lead fields, Voice IQ summary, action strip
+ *   (LeadLeftPane — Step 8).
  *
  * Right pane (flex): TabStrip + active tab content.
- *   - AI Drafts tab content lands in Step 5.
+ *   - AI Drafts (Step 5): inline approval, owner-scoped.
  *   - Updates / Chats / Calls / Emails / Comments / Appointments / Documents
- *     tabs land in Step 6.
- *   - In Step 4 (this commit), each tab renders a placeholder that confirms
- *     the routing works end-to-end.
+ *     (Step 6): activity-stream-derived + dedicated row fetches.
+ *   - Quick Action (Step 7): single modal that writes comment + status
+ *     transition + follow-up atomically.
  */
 
 export type LeadCanvasV2Props = {
@@ -34,6 +43,7 @@ export type LeadCanvasV2Props = {
   isOwner: boolean;
   canEdit: boolean;
   canCall: boolean;
+  canComment: boolean;
   canPromoteToDeal: boolean;
   /** The viewing user's phone, surfaced on click-to-call buttons. */
   repPhone: string | null;
@@ -54,14 +64,18 @@ export function LeadCanvasV2(props: LeadCanvasV2Props) {
         className="w-80 shrink-0 border-r border-neutral-200 bg-neutral-50 p-4"
         data-testid="lead-canvas-v2-left-pane"
       >
-        <LeftPanePlaceholder data={data} />
+        <LeadLeftPane
+          lead={data.lead}
+          canCall={props.canCall}
+          repPhone={props.repPhone}
+        />
       </aside>
 
       <section
         className="flex flex-1 flex-col gap-3 p-4"
         data-testid="lead-canvas-v2-right-pane"
       >
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between gap-3">
           <div>
             <Link
               href="/dashboard/leads"
@@ -73,6 +87,12 @@ export function LeadCanvasV2(props: LeadCanvasV2Props) {
               {data.lead.label}
             </h1>
           </div>
+          {props.canEdit && (
+            <QuickActionButton
+              leadId={data.lead.id}
+              currentState={data.lead.state}
+            />
+          )}
         </header>
 
         <TabStrip
@@ -87,7 +107,7 @@ export function LeadCanvasV2(props: LeadCanvasV2Props) {
           data-testid={`lead-canvas-tabpanel-${active}`}
           className="flex-1"
         >
-          {active === "ai_drafts" ? (
+          {active === "ai_drafts" && (
             <AiDraftsTab
               leadId={data.lead.id}
               drafts={data.pending_drafts}
@@ -100,90 +120,28 @@ export function LeadCanvasV2(props: LeadCanvasV2Props) {
                     : "Only the assigned rep (or a manager) can approve this draft."
               }
             />
-          ) : (
-            <TabPlaceholder active={active} />
+          )}
+          {active === "updates" && (
+            <UpdatesTab activities={data.activities} />
+          )}
+          {active === "chats" && <ChatsTab activities={data.activities} />}
+          {active === "calls" && <CallsTab activities={data.activities} />}
+          {active === "emails" && <EmailsTab activities={data.activities} />}
+          {active === "comments" && (
+            <CommentsTab
+              leadId={data.lead.id}
+              comments={data.comments}
+              canComment={props.canComment}
+            />
+          )}
+          {active === "appointments" && (
+            <AppointmentsTab appointments={data.appointments} />
+          )}
+          {active === "documents" && (
+            <DocumentsTab documents={data.documents} />
           )}
         </div>
       </section>
-    </div>
-  );
-}
-
-/**
- * Step 4 placeholder — confirms the shell + routing work. Replaced by real
- * left-pane content in Step 8 (lead fields + Voice IQ summary + action strip).
- */
-function LeftPanePlaceholder({ data }: { data: CanvasDataV2 }) {
-  const ldata = data.lead.data as Record<string, unknown>;
-  const status = data.lead.state;
-  const phone =
-    typeof ldata.phone === "string"
-      ? ldata.phone
-      : typeof (ldata.contact as Record<string, unknown> | undefined)?.phone === "string"
-        ? ((ldata.contact as Record<string, unknown>).phone as string)
-        : null;
-  const email =
-    typeof ldata.email === "string"
-      ? ldata.email
-      : typeof (ldata.contact as Record<string, unknown> | undefined)?.email === "string"
-        ? ((ldata.contact as Record<string, unknown>).email as string)
-        : null;
-
-  return (
-    <div className="space-y-3" data-testid="lead-canvas-v2-left-fields">
-      <div>
-        <p className="text-xs uppercase tracking-wide text-neutral-500">Status</p>
-        <p className="text-sm font-medium text-neutral-900">{status}</p>
-      </div>
-      {phone && (
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
-            Phone
-          </p>
-          <p className="text-sm text-neutral-900">{phone}</p>
-        </div>
-      )}
-      {email && (
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
-            Email
-          </p>
-          <p className="text-sm text-neutral-900">{email}</p>
-        </div>
-      )}
-      <p
-        className="rounded border border-dashed border-neutral-300 p-2 text-xs text-neutral-500"
-        data-testid="lead-canvas-v2-left-pane-placeholder"
-      >
-        Voice IQ summary, full lead-fields editor, and action strip land here
-        in Step 8.
-      </p>
-    </div>
-  );
-}
-
-/**
- * Step 4 placeholder — each tab announces its presence so the shell can be
- * verified independently of tab content. AI Drafts is wired in Step 5; the
- * remaining 7 tabs land in Step 6.
- */
-function TabPlaceholder({ active }: { active: TabId }) {
-  const labels: Record<TabId, string> = {
-    updates: "Activity stream (Updates) — lands in Step 6.",
-    ai_drafts: "AI Drafts approval inline — lands in Step 5.",
-    chats: "WhatsApp / SMS conversation thread — lands in Step 6.",
-    calls: "Call log with playback — lands in Step 6.",
-    emails: "Email conversation thread — lands in Step 6.",
-    comments: "Internal comment thread — lands in Step 6.",
-    appointments: "Scheduled & past site visits — lands in Step 6.",
-    documents: "Sent brochures + uploaded documents — lands in Step 6.",
-  };
-  return (
-    <div
-      className="rounded border border-dashed border-neutral-300 p-6 text-sm text-neutral-500"
-      data-testid={`lead-canvas-v2-${active}-placeholder`}
-    >
-      {labels[active]}
     </div>
   );
 }

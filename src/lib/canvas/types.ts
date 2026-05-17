@@ -60,7 +60,41 @@ export type PendingDraft = {
   error: string | null;
 };
 
+/** v6.2.1 — a note row rendered in the Comments tab. */
+export type CanvasComment = {
+  id: string;
+  body: string;
+  created_at: string;
+  created_by: string;
+  created_via: string;
+};
+
+/** v6.2.1 — a site_visit row rendered in the Appointments tab. */
+export type CanvasAppointment = {
+  id: string;
+  label: string;
+  state: string;
+  scheduled_at: string | null;
+  pickup_address: string | null;
+  cab_provider: string | null;
+  assigned_sales_rep_id: string | null;
+  created_at: string;
+};
+
+/** v6.2.1 — a document row rendered in the Documents tab. */
+export type CanvasDocument = {
+  id: string;
+  label: string;
+  document_type: string | null;
+  storage_url: string | null;
+  created_at: string;
+  created_by: string;
+};
+
 export type CanvasDataV2 = CanvasData & {
   tab_counts: CanvasTabCounts;
   pending_drafts: PendingDraft[];
+  comments: CanvasComment[];
+  appointments: CanvasAppointment[];
+  documents: CanvasDocument[];
 };

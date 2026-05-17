@@ -4,8 +4,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   AgentTier,
   CanvasActivity,
+  CanvasAppointment,
+  CanvasComment,
   CanvasData,
   CanvasDataV2,
+  CanvasDocument,
   CanvasLead,
   CanvasTabCounts,
   PendingDraft,
@@ -319,39 +322,104 @@ export async function getLeadCanvasV2(
     error: r.error,
   }));
 
-  // Counts from related node tables. Each wrapped via safeCount so a
-  // schema-not-yet-shipped table (e.g. comments) degrades to 0 instead of
-  // failing the whole canvas render.
-  const [appointments, documents, comments] = await Promise.all([
-    safeCount(
+  // Row fetches for the Comments / Appointments / Documents tabs. Each
+  // wrapped via safeRows so a schema-not-yet-shipped surface degrades to
+  // [] instead of failing the whole canvas render.
+  //
+  // Linkage columns (all jsonb paths):
+  //   - note.data.lead_id          (v6.2.1 — added to noteSchema)
+  //   - site_visit.data.lead_id    (D-602)
+  //   - document.data.related_node_id  (existing documentSchema)
+  const [commentRows, appointmentRows, documentRows] = await Promise.all([
+    safeRows<{ id: string; data: unknown; created_at: string; created_by: string; created_via: string }>(
       supabase
         .from("nodes")
-        .select("id", { count: "exact", head: true })
+        .select("id, data, created_at, created_by, created_via")
+        .eq("organization_id", org_id)
+        .eq("node_type", "note")
+        .is("deleted_at", null)
+        .filter("data->>lead_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
+    safeRows<{
+      id: string;
+      label: string;
+      state: string;
+      data: unknown;
+      created_at: string;
+    }>(
+      supabase
+        .from("nodes")
+        .select("id, label, state, data, created_at")
         .eq("organization_id", org_id)
         .eq("node_type", "site_visit")
         .is("deleted_at", null)
-        // site_visit ↔ lead linkage lives on data.lead_id for v6 visits.
-        .filter("data->>lead_id", "eq", lead_id),
+        .filter("data->>lead_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ),
-    safeCount(
+    safeRows<{
+      id: string;
+      label: string;
+      data: unknown;
+      created_at: string;
+      created_by: string;
+    }>(
       supabase
         .from("nodes")
-        .select("id", { count: "exact", head: true })
+        .select("id, label, data, created_at, created_by")
         .eq("organization_id", org_id)
         .eq("node_type", "document")
         .is("deleted_at", null)
-        .filter("data->>lead_id", "eq", lead_id),
-    ),
-    safeCount(
-      supabase
-        .from("nodes")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", org_id)
-        .eq("node_type", "comment")
-        .is("deleted_at", null)
-        .filter("data->>lead_id", "eq", lead_id),
+        .filter("data->>related_node_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ),
   ]);
+
+  const comments: CanvasComment[] = commentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      body: typeof d.body === "string" ? d.body : "",
+      created_at: r.created_at,
+      created_by: r.created_by,
+      created_via: r.created_via,
+    };
+  });
+
+  const appointments: CanvasAppointment[] = appointmentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      label: r.label,
+      state: r.state,
+      scheduled_at:
+        typeof d.scheduled_at === "string" ? d.scheduled_at : null,
+      pickup_address:
+        typeof d.pickup_address === "string" ? d.pickup_address : null,
+      cab_provider:
+        typeof d.cab_provider === "string" ? d.cab_provider : null,
+      assigned_sales_rep_id:
+        typeof d.assigned_sales_rep_id === "string"
+          ? d.assigned_sales_rep_id
+          : null,
+      created_at: r.created_at,
+    };
+  });
+
+  const documents: CanvasDocument[] = documentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      label: r.label,
+      document_type: typeof d.kind === "string" ? d.kind : null,
+      storage_url: typeof d.signed_url === "string" ? d.signed_url : null,
+      created_at: r.created_at,
+      created_by: r.created_by,
+    };
+  });
 
   const tab_counts: CanvasTabCounts = {
     updates: base.activities.length,
@@ -359,14 +427,29 @@ export async function getLeadCanvasV2(
     chats,
     calls,
     emails,
-    comments,
-    appointments,
-    documents,
+    comments: comments.length,
+    appointments: appointments.length,
+    documents: documents.length,
   };
 
   return {
     ...base,
     tab_counts,
     pending_drafts,
+    comments,
+    appointments,
+    documents,
   };
+}
+
+async function safeRows<T>(
+  thenable: PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[]> {
+  try {
+    const r = await thenable;
+    if (r.error) return [];
+    return Array.isArray(r.data) ? (r.data as T[]) : [];
+  } catch {
+    return [];
+  }
 }
