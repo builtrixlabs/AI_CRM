@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { LEAD_STATES, type LeadState } from "@/lib/leads";
+// IMPORTANT: import from the leaf module, NOT the @/lib/leads barrel.
+// The barrel re-exports from ./api which imports getSupabaseAdmin —
+// a server-only module with a top-level `throw` that fires on any
+// client bundle hydration. (Every other client component in the repo
+// follows this convention; this file is the only one that broke it.)
+import { LEAD_STATES, type LeadState } from "@/lib/leads/types";
 import { quickActionAction } from "../actions/quick-action";
 
 /**
