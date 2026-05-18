@@ -33,6 +33,9 @@ export default async function LeadCanvasPage(props: {
   const canPromoteToDeal = perms.has("deals:create" as never);
   // D-609 — click-to-call on the canvas, gated on calls:listen.
   const canCall = perms.has("calls:listen" as never);
+  // v6.2.2 — manual email / WhatsApp send from the lead workspace rail.
+  // Gated on activities:create (every rep tier + manager + admin have it).
+  const canSendMessage = perms.has("activities:create" as never);
   const canScheduleVisit = perms.has("site_visits:view" as never);
   const repPhone = user?.profile.phone ?? null;
 
@@ -45,6 +48,7 @@ export default async function LeadCanvasPage(props: {
       canEdit={canEdit}
       canTransition={canTransition}
       canCall={canCall}
+      canSendMessage={canSendMessage}
       canPromoteToDeal={canPromoteToDeal}
       canScheduleVisit={canScheduleVisit}
       repPhone={repPhone}

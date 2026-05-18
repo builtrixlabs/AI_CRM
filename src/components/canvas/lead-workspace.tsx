@@ -16,6 +16,8 @@ import { PromoteToDealButton } from "./promote-to-deal-button";
 import { EditModeButton } from "./edit-mode-button";
 import { ScheduleSiteVisitButton } from "./schedule-site-visit-button";
 import { LeadProfileRail } from "./lead-profile-rail";
+import { SendEmailButton } from "./send-email-button";
+import { SendWhatsAppButton } from "./send-whatsapp-button";
 
 type Props = {
   lead: CanvasLead;
@@ -25,6 +27,8 @@ type Props = {
   canEdit?: boolean;
   canTransition?: boolean;
   canCall?: boolean;
+  /** Send manual email / WhatsApp from the lead rail (gated on activities:create). */
+  canSendMessage?: boolean;
   canPromoteToDeal?: boolean;
   canScheduleVisit?: boolean;
   repPhone?: string | null;
@@ -62,6 +66,7 @@ export function LeadWorkspace(props: Props) {
     canEdit = false,
     canTransition = false,
     canCall = false,
+    canSendMessage = false,
     canPromoteToDeal = false,
     canScheduleVisit = true,
     repPhone = null,
@@ -74,9 +79,12 @@ export function LeadWorkspace(props: Props) {
   const [editing, setEditing] = useState(false);
   const leadValid = leadSchema.safeParse(lead.data).success;
   const data = lead.data as Record<string, unknown>;
-  const leadHasPhone = typeof data.phone === "string" && data.phone.trim() !== "";
+  const leadPhone = pickString(data, "phone") ?? pickString(data, "contact_phone") ?? null;
+  const leadEmail = pickString(data, "email") ?? pickString(data, "contact_email") ?? null;
+  const leadHasPhone = leadPhone !== null;
   const displayName =
     pickString(data, "name") ?? pickString(data, "full_name") ?? lead.label;
+  const showCommsCard = !demo && (canCall || canSendMessage);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -133,19 +141,32 @@ export function LeadWorkspace(props: Props) {
               ownerName={ownerName}
               ownerRole={ownerRole}
             />
-            {canCall ? (
+            {showCommsCard ? (
               <section
-                className="bcmd-card p-4 space-y-2"
-                data-testid="lead-call-card"
+                className="bcmd-card p-4 space-y-3"
+                data-testid="lead-comms-card"
               >
                 <h3 className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--amethyst-700)]">
-                  Click to call
+                  Quick comms
                 </h3>
-                <ClickToCallButton
-                  leadId={lead.id}
-                  leadHasPhone={leadHasPhone}
-                  repPhone={repPhone}
-                />
+                {canCall ? (
+                  <div data-testid="lead-call-card">
+                    <ClickToCallButton
+                      leadId={lead.id}
+                      leadHasPhone={leadHasPhone}
+                      repPhone={repPhone}
+                    />
+                  </div>
+                ) : null}
+                {canSendMessage ? (
+                  <div className="flex flex-col gap-2">
+                    <SendEmailButton leadId={lead.id} leadEmail={leadEmail} />
+                    <SendWhatsAppButton
+                      leadId={lead.id}
+                      leadPhone={leadPhone}
+                    />
+                  </div>
+                ) : null}
               </section>
             ) : null}
             {customFields ? (
