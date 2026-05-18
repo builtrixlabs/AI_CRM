@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import type { CanvasTabCounts } from "@/lib/canvas/types";
 
 /**
@@ -46,6 +47,27 @@ const TABS: ReadonlyArray<Omit<TabDef, "count">> = [
 ];
 
 export function TabStrip({ active, counts, onChange }: TabStripProps) {
+  // Ref array so the WAI-ARIA tabs keyboard pattern (Left/Right/Home/End)
+  // can move focus AND selection across the strip without leaving the
+  // tablist. Each entry is the underlying <button>.
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const activeIdx = Math.max(
+    0,
+    TABS.findIndex((t) => t.id === active),
+  );
+
+  function onKey(e: React.KeyboardEvent<HTMLButtonElement>, i: number) {
+    let next = i;
+    if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
+    else if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = TABS.length - 1;
+    else return;
+    e.preventDefault();
+    onChange(TABS[next].id);
+    buttonRefs.current[next]?.focus();
+  }
+
   return (
     <div
       role="tablist"
@@ -53,16 +75,24 @@ export function TabStrip({ active, counts, onChange }: TabStripProps) {
       className="flex flex-wrap items-center gap-1 border-b border-neutral-200 pb-1"
       data-testid="lead-canvas-tab-strip"
     >
-      {TABS.map((t) => {
+      {TABS.map((t, i) => {
         const count = counts[t.id];
         const isActive = active === t.id;
         return (
           <button
             key={t.id}
+            ref={(el) => {
+              buttonRefs.current[i] = el;
+            }}
             type="button"
             role="tab"
             aria-selected={isActive}
+            // Roving tabindex: only the active tab is in the tab order, so
+            // Tab moves from the strip into the tab panel (matches the
+            // WAI-ARIA Authoring Practices guide).
+            tabIndex={i === activeIdx ? 0 : -1}
             onClick={() => onChange(t.id)}
+            onKeyDown={(e) => onKey(e, i)}
             data-testid={`lead-canvas-tab-${t.id}`}
             className={
               "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition " +

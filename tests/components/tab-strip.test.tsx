@@ -108,6 +108,54 @@ describe("<TabStrip>", () => {
     expect(onChange).toHaveBeenCalledWith("ai_drafts");
   });
 
+  it("ArrowRight on the active tab moves selection to the next tab", () => {
+    const onChange = vi.fn();
+    render(
+      <TabStrip
+        active="updates"
+        counts={counts({ ai_drafts: 1 })}
+        onChange={onChange}
+      />,
+    );
+    const active = screen.getByTestId("lead-canvas-tab-updates");
+    fireEvent.keyDown(active, { key: "ArrowRight" });
+    expect(onChange).toHaveBeenCalledWith("ai_drafts");
+  });
+
+  it("ArrowLeft on the active tab wraps to the last tab", () => {
+    const onChange = vi.fn();
+    render(
+      <TabStrip active="updates" counts={counts()} onChange={onChange} />,
+    );
+    const active = screen.getByTestId("lead-canvas-tab-updates");
+    fireEvent.keyDown(active, { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenCalledWith("documents");
+  });
+
+  it("Home jumps to the first tab and End jumps to the last", () => {
+    const onChange = vi.fn();
+    render(
+      <TabStrip active="calls" counts={counts()} onChange={onChange} />,
+    );
+    const active = screen.getByTestId("lead-canvas-tab-calls");
+    fireEvent.keyDown(active, { key: "End" });
+    expect(onChange).toHaveBeenLastCalledWith("documents");
+    fireEvent.keyDown(active, { key: "Home" });
+    expect(onChange).toHaveBeenLastCalledWith("updates");
+  });
+
+  it("roving tabindex: only the active tab is in the tab order", () => {
+    render(
+      <TabStrip active="ai_drafts" counts={counts()} onChange={() => undefined} />,
+    );
+    expect(
+      screen.getByTestId("lead-canvas-tab-ai_drafts").getAttribute("tabindex"),
+    ).toBe("0");
+    expect(
+      screen.getByTestId("lead-canvas-tab-updates").getAttribute("tabindex"),
+    ).toBe("-1");
+  });
+
   it("ai_drafts badge gets the actionable (rose-600) class when count > 0", () => {
     render(
       <TabStrip

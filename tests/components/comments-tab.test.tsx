@@ -75,6 +75,25 @@ describe("<CommentsTab>", () => {
     expect(addMock).toHaveBeenCalledWith(LEAD, "Just spoke with customer.");
   });
 
+  it("Cmd+Enter on the textarea submits", async () => {
+    addMock.mockResolvedValue({ ok: true, comment_id: "new-1" });
+    render(<CommentsTab leadId={LEAD} comments={[]} canComment={true} />);
+    const ta = screen.getByTestId("comments-tab-textarea");
+    fireEvent.change(ta, { target: { value: "via keyboard" } });
+    fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(addMock).toHaveBeenCalledOnce());
+    expect(addMock).toHaveBeenCalledWith(LEAD, "via keyboard");
+  });
+
+  it("Cmd+Enter does NOT submit when body is empty or canComment=false", async () => {
+    render(<CommentsTab leadId={LEAD} comments={[]} canComment={true} />);
+    const ta = screen.getByTestId("comments-tab-textarea");
+    // Empty body — should not submit.
+    fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(addMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces server error from addCommentAction", async () => {
     addMock.mockResolvedValue({
       ok: false,

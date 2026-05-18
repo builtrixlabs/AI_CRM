@@ -66,11 +66,18 @@ export function CommentsTab({ leadId, comments, canComment }: CommentsTabProps) 
           id="comments-tab-body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => {
+            // Cmd/Ctrl+Enter posts the comment without reaching for the mouse.
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              if (!pending && canComment && body.trim().length > 0) submit();
+            }
+          }}
           rows={3}
           disabled={!canComment || pending}
           maxLength={4000}
           className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"
-          placeholder="Internal note — visible to your team only."
+          placeholder="Internal note — visible to your team only. Cmd/Ctrl+Enter to post."
           data-testid="comments-tab-textarea"
         />
         <div className="mt-2 flex items-center gap-2">

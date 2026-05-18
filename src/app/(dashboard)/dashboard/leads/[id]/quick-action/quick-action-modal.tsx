@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { LEAD_STATES, type LeadState } from "@/lib/leads";
 import { quickActionAction } from "../actions/quick-action";
@@ -50,6 +50,26 @@ export function QuickActionModal({
   const [reason, setReason] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const firstFieldRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ESC to close + body scroll lock + auto-focus the comment field when open.
+  // Skipped when closed so we don't leak listeners on every render.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !pending) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Auto-focus the first input on open — gives keyboard users a sane entry.
+    const t = window.setTimeout(() => firstFieldRef.current?.focus(), 0);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      window.clearTimeout(t);
+    };
+  }, [open, pending, onClose]);
 
   if (!open) return null;
 
@@ -102,8 +122,17 @@ export function QuickActionModal({
       aria-modal="true"
       aria-labelledby="quick-action-title"
       data-testid="quick-action-modal"
+      onClick={(e) => {
+        // Backdrop click closes — only when the click landed on the backdrop
+        // itself, not on the panel inside.
+        if (e.target === e.currentTarget && !pending) onClose();
+      }}
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg"
+        data-testid="quick-action-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between">
           <h2
             id="quick-action-title"
@@ -128,8 +157,16 @@ export function QuickActionModal({
               Comment (optional)
             </span>
             <textarea
+              ref={firstFieldRef}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter submits — common modal shortcut.
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
               rows={3}
               maxLength={4000}
               className="mt-1 w-full rounded border border-neutral-300 p-2 text-sm"

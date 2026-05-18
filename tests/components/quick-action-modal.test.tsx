@@ -173,6 +173,73 @@ describe("<QuickActionModal>", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it("closes on Escape key", () => {
+    const onClose = vi.fn();
+    render(
+      <QuickActionModal
+        leadId={LEAD}
+        currentState="contacted"
+        open={true}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("closes on backdrop click but NOT on panel click", () => {
+    const onClose = vi.fn();
+    render(
+      <QuickActionModal
+        leadId={LEAD}
+        currentState="contacted"
+        open={true}
+        onClose={onClose}
+      />,
+    );
+    // Panel click — should NOT close.
+    fireEvent.click(screen.getByTestId("quick-action-panel"));
+    expect(onClose).not.toHaveBeenCalled();
+    // Backdrop click — should close.
+    fireEvent.click(screen.getByTestId("quick-action-modal"));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("locks body scroll while open and restores on unmount", () => {
+    const { unmount } = render(
+      <QuickActionModal
+        leadId={LEAD}
+        currentState="contacted"
+        open={true}
+        onClose={() => undefined}
+      />,
+    );
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("Cmd+Enter on the comment field submits", async () => {
+    qaMock.mockResolvedValue({
+      ok: true,
+      comment_id: "c-1",
+      state_changed: false,
+      follow_up_set: false,
+    });
+    render(
+      <QuickActionModal
+        leadId={LEAD}
+        currentState="contacted"
+        open={true}
+        onClose={() => undefined}
+      />,
+    );
+    const ta = screen.getByTestId("quick-action-comment");
+    fireEvent.change(ta, { target: { value: "hi" } });
+    fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(qaMock).toHaveBeenCalledOnce());
+  });
+
   it("shows server-side error when action returns ok=false", async () => {
     qaMock.mockResolvedValue({
       ok: false,
