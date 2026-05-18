@@ -99,6 +99,33 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 
 > **Operator follow-up:** D-615 lands only the `lifecycle_status` + approval-audit subset of implementation-order §6's `ai_workflow_versioning.sql` — D-611 (Phase 3) extends the same `directives` columns with `version` / `parent_id` / `compiled_dag` / `test_payloads`. Phase 2 (all of 2.1→2.6) is now built; Gate 2 acceptance (Vercel preview + live UI verification + PR merge to `v6-phase-2`) is operator-side.
 
+### v6.2.1 — Agent-inline approval (iteration on D-614/D-615)
+
+| Phase | Status |
+|---|---|
+| **v6.2.1** Move WhatsApp / SMS / Email / Call approval from `/admin/agents/queue` (org-admin only) inline onto the lead canvas, where the sales rep who owns the lead approves their own AI-drafted messages. Org admin retains the queue as the **manager rollup**. D-614 send-policy semantics unchanged — `auto_send` rows still bypass approval. | **shipped** [#90](https://github.com/builtrixlabs/AI_CRM/pull/90) |
+
+**Shipped 2026-05-18** — squash-merged `e0aa68b` → `main`. Built end-to-end across one phase (10 step plan, 4 commits): `f571cf8` (foundations Steps 1-5 + 9) → `b84adfc` (Steps 6 + 7 + 8 + 10) → `d5e5818` (`verify_v6_2_1.mjs` schema-check) → `9158570` (keyboard accessibility + modal UX hardening).
+
+**Surface:**
+- New permission `agents:approve_own_leads` + `canApproveQueueItem(user, queue_row)` helper with three paths: workspace_admin+ (global), manager / org_admin / org_owner (org-scoped via `agents:view_activity`), or sales / phone rep with `agents:approve_own_leads` AND `nodes.data.assigned_sales_rep_id === user.user.id` (owner-scoped). `MANAGER_OPERATIONAL` gained `agents:view_activity` (closes spec gap; opens `/admin/agents/queue` to managers as the rollup view).
+- Reusable `<DraftCard>` extracted from the admin queue; `<SiteVisitBookingCard>` made callback-injectable. Admin queue refactored to a thin wrapper that wires admin-scoped actions; existing RTL tests preserved.
+- Flag-gated **lead canvas v2**: 320 px left pane (status, lead fields, Voice IQ BANT pills, action strip — Call / WhatsApp / Email) + 8-tab right pane (Updates, **AI Drafts**, Chats, Calls, Emails, Comments, Appointments, Documents) + top-right Quick Action modal (atomic comment + state transition + follow-up; pre-validation rollback). Tab strip implements WAI-ARIA arrow-key navigation with roving tabindex. Modal closes on `Esc` and backdrop click, locks body scroll, auto-focuses first field, supports `Cmd/Ctrl+Enter` to save. Comments textarea supports `Cmd/Ctrl+Enter` to post.
+- AI Drafts tab subscribes to `agent_approval_queue` realtime INSERTs filtered by `lead_id` — badge increments without refresh. Approve / Edit-and-Approve / Reject all route through `dispatchApprovedDraft` (D-603) unchanged.
+
+**Schema (additive, TS-only — no data migration):**
+- `leadSchema`: `+ follow_up_on` (Quick Action target), `+ assigned_sales_rep_id` (recognises what D-610 writes).
+- `noteSchema`: `+ lead_id` (Comments tab linkage).
+
+**Migrations applied + verified 2026-05-17 (live Supabase):**
+- `20260515130000_agent_queue_realtime_publication.sql` — `ALTER PUBLICATION supabase_realtime ADD TABLE agent_approval_queue` (DO-block guarded, idempotent).
+- `20260515130500_organizations_feature_flags.sql` — `+ organizations.feature_flags jsonb NOT NULL DEFAULT '{}'::jsonb`.
+- `scripts/verify_v6_2_1.mjs`: **6 / 6 PASS** (publication, column type, NOT NULL, default, ledger rows, sample-org default applied).
+
+**Verification:** full `npx vitest run` → **2090 / 2090 green** (240 files; +35 over the 2055 Phase-2.6 baseline — 135 new v6.2.1 unit/RTL across 12 new test files, less 100 prior-suite count corrections from the merge). `npx tsc --noEmit` → 0 errors in changed files. Playwright `tests/e2e/tele-caller-approves-draft.spec.ts` @smoke (owner approves end-to-end + non-owner disabled assertion). Post-merge `main` Vercel deploy ● Ready (`ai-ar9o4pq96-builtrixlabs-projects.vercel.app`), unauthed smoke: `/` → 307, `/auth/sign-in` → 200.
+
+> **Rollout:** the canvas v2 is flag-gated per org. Legacy canvas continues to serve every org without `feature_flags.lead_canvas_v2 = true` flipped on, so this PR was safe to merge before the pilot org gets switched over. Flip via super_admin SQL: `UPDATE organizations SET feature_flags = jsonb_set(feature_flags, '{lead_canvas_v2}', 'true'::jsonb) WHERE slug = '<pilot-org-slug>';`.
+
 ## 4. Phase 3 — Manager + org admin UX
 
 | ID | Directive | Status | Depends on |
