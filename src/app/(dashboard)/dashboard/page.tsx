@@ -2,12 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import { getCommandCenterData } from "@/lib/command-center/data";
-import { KpiTiles } from "@/components/command-center/kpi-tiles";
-import { PulseFeed } from "@/components/command-center/pulse-feed";
-import { LeadHeatmap } from "@/components/command-center/lead-heatmap";
-import { AgenticState } from "@/components/command-center/agentic-state";
-import { HotLeadsStrip } from "@/components/command-center/hot-leads";
-import { StateMachineCanvas } from "@/components/command-center/state-machine-canvas";
+import { resolveRoleTier } from "@/lib/auth/role-tier";
+import { AgentDashboard } from "@/components/dashboard/agent-dashboard";
+import { ManagerDashboard } from "@/components/dashboard/manager-dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +15,11 @@ function greetingForHour(h: number): string {
 }
 
 /**
- * D-605 Command Center home — real org-scoped, role-scoped data.
- * Replaces the Phase-0 hardcoded mockup.
+ * v6.2.2 — role-aware Builtrix Command home.
+ * Routes by tier into either AgentDashboard (focused today view) or
+ * ManagerDashboard (org/team rollup). Both consume the same role-scoped
+ * `getCommandCenterData` payload — the data layer already narrows leads/
+ * activities for rep-tier viewers via FULL_VISIBILITY_ROLES.
  */
 export default async function CommandCenterHome() {
   const user = await getCurrentUser();
@@ -27,10 +27,15 @@ export default async function CommandCenterHome() {
   if (!user.org_id) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-12">
-        <p className="text-sm text-muted-foreground">
-          Your account is not yet linked to an organization. Contact your
-          admin.
-        </p>
+        <div className="bcmd-card px-6 py-10 text-center">
+          <h2 className="font-display text-lg font-semibold text-[var(--fg1)]">
+            No organisation yet
+          </h2>
+          <p className="mt-2 font-sans text-sm text-[var(--fg3)]">
+            Your account is not yet linked to an organisation. Contact your
+            admin to be invited.
+          </p>
+        </div>
       </div>
     );
   }
@@ -43,59 +48,46 @@ export default async function CommandCenterHome() {
 
   const greeting = greetingForHour(new Date().getHours());
   const firstName = user.profile.display_name?.split(" ")[0] ?? "operator";
+  const tier = resolveRoleTier(user.profile.base_role);
+
+  if (!data.has_any_data) {
+    return <EmptyState />;
+  }
+
+  if (tier === "agent") {
+    return (
+      <AgentDashboard data={data} firstName={firstName} greeting={greeting} />
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-6 py-6">
-      <header className="flex items-end justify-between gap-6">
-        <div>
-          <div className="cc-eyebrow cc-eyebrow-soft">
-            Command Center ·{" "}
-            {data.scope === "org" ? "Org rollup" : "Your pipeline"}
-          </div>
-          <h1 className="brand-display mt-2 text-foreground">
-            {greeting},{" "}
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "var(--cc-gradient-violet-teal)" }}
-            >
-              {firstName}
-            </span>
-          </h1>
-        </div>
-      </header>
+    <ManagerDashboard
+      data={data}
+      firstName={firstName}
+      greeting={greeting}
+      tierLabel={tier === "admin" ? "admin" : "manager"}
+    />
+  );
+}
 
-      {!data.has_any_data ? (
-        <div
-          className="cc-card px-6 py-12 text-center"
-          data-testid="cc-empty-state"
+function EmptyState() {
+  return (
+    <div className="mx-auto max-w-3xl px-6 py-12">
+      <div className="bcmd-card px-6 py-12 text-center" data-testid="cc-empty-state">
+        <h2 className="font-display text-lg font-semibold text-[var(--fg1)]">
+          No leads yet
+        </h2>
+        <p className="mt-2 font-sans text-sm text-[var(--fg3)]">
+          Connect the Marketing Intelligence Hub or use the universal
+          webform endpoint to start ingesting leads.
+        </p>
+        <Link
+          href="/admin/integrations"
+          className="mt-4 inline-block font-display text-sm font-semibold text-[var(--amethyst-700)] underline"
         >
-          <h2 className="text-lg font-semibold">No leads yet</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Connect the Marketing Intelligence Hub or use the universal
-            webform endpoint to start ingesting leads.
-          </p>
-          <Link
-            href="/admin/integrations"
-            className="mt-4 inline-block text-sm underline"
-          >
-            Configure integrations →
-          </Link>
-        </div>
-      ) : (
-        <>
-          <KpiTiles kpis={data.kpis} />
-
-          <div className="grid min-h-[480px] grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)]">
-            <PulseFeed initialActivities={data.pulse} orgId={user.org_id} />
-            <LeadHeatmap volume={data.volume} />
-            <AgenticState agentic={data.agentic} />
-          </div>
-
-          <StateMachineCanvas states={data.states} />
-
-          <HotLeadsStrip hotLeads={data.hot_leads} />
-        </>
-      )}
+          Configure integrations →
+        </Link>
+      </div>
     </div>
   );
 }
