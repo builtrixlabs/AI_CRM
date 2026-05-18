@@ -127,6 +127,18 @@ export const PERMISSIONS = [
   "cp:submit_lead",
   "cp:view_own_submissions",
   "cp:view_commissions",
+
+  // ── v2-bundle re-add (TESTING ONLY) ─────────────────────────────────────
+  // These were removed in v6 Phase 0.1 (D-320 REMOVE) along with the
+  // catalog UI. Re-added on this bundle branch ONLY so the v2 catalog
+  // code typechecks for live preview testing. DO NOT keep when merging
+  // this bundle to main — restoring them resurrects the catalog admin
+  // surface that v6 deliberately dropped, and the underlying tables
+  // (properties/units) were also dropped in v6 Phase 0.2 (D-420), so
+  // runtime queries against them will fail.
+  "properties:edit",
+  "units:edit",
+  "catalog:admin_override",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -234,6 +246,11 @@ const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
   "leads:bulk_import",
   "campaigns:create",
   "campaigns:execute",
+  // v2-bundle re-add (TESTING ONLY) — see note in PERMISSIONS array above.
+  // Drops with the bundle if not merged.
+  "properties:edit",
+  "units:edit",
+  "catalog:admin_override",
   // D-607 — workspace admins can delete brochures from the repository.
   "brochures:delete",
 ];
