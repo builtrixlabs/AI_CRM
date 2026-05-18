@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Geist } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "Builtrix AI-Native CRM",
@@ -17,9 +18,6 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Best-effort theme seed. Anonymous requests + middleware-redirected
-  // requests are common; getCurrentUser returns null and we fall
-  // through to "system".
   let initialTheme: "light" | "dark" | "system" = "system";
   try {
     const user = await getCurrentUser();
@@ -31,7 +29,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("font-sans", geist.variable)}
+      className={cn("font-sans", geist.variable, geistMono.variable)}
       suppressHydrationWarning
     >
       <body>

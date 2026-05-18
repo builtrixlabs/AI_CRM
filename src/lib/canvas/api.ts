@@ -1,7 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { leadSchema } from "@/lib/nodes/schemas/lead";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AgentTier, CanvasActivity, CanvasData, CanvasLead } from "./types";
+import type {
+  AgentTier,
+  CanvasActivity,
+  CanvasAppointment,
+  CanvasComment,
+  CanvasData,
+  CanvasDataV2,
+  CanvasDocument,
+  CanvasLead,
+  CanvasTabCounts,
+  PendingDraft,
+} from "./types";
 import {
   ACTIVITY_EDGE_TYPES,
   DEFAULT_ACTIVITY_LIMIT,
@@ -186,4 +197,259 @@ export async function getLeadCanvas(
   );
 
   return { lead, activities };
+}
+
+// ── v6.2.1 — split-pane canvas data ─────────────────────────────────────────
+
+type PendingDraftRow = {
+  id: string;
+  lead_id: string;
+  agent_kind: string;
+  channel: string;
+  draft_body: string;
+  created_at: string;
+  attachments: unknown;
+  error: string | null;
+};
+
+function bucketActivity(d: unknown): "chat" | "call" | "email" | "other" {
+  if (!d || typeof d !== "object") return "other";
+  const data = d as Record<string, unknown>;
+  const kind = typeof data.kind === "string" ? data.kind : null;
+  const channel = typeof data.channel === "string" ? data.channel : null;
+  if (kind === "call_initiated" || kind === "call_completed") return "call";
+  if (kind === "comms_sent" && channel === "whatsapp") return "chat";
+  if (kind === "comms_sent" && channel === "sms") return "chat";
+  if (kind === "comms_sent" && channel === "email") return "email";
+  return "other";
+}
+
+/**
+ * v6.2.1 — extended canvas fetch for the split-pane layout.
+ *
+ * Returns everything `getLeadCanvas` does, PLUS:
+ *   - per-tab badge counts (8 tabs)
+ *   - pending AI draft rows for the AI Drafts tab
+ *
+ * Implementation notes:
+ *   - Counts are derived from the activity stream by inspecting
+ *     `data.kind` / `data.channel`. We don't have separate `chat_log`
+ *     / `email_log` tables yet — everything lives in `nodes.activity`
+ *     keyed by `data.kind`.
+ *   - Site visits and documents queries are wrapped in a graceful
+ *     try/catch via `safeCount` so a schema gap returns 0 instead of
+ *     killing the whole canvas render.
+ *   - `pending_drafts` is capped at 50 rows (well above the realistic
+ *     pending count on a single lead).
+ */
+async function safeCount(
+  thenable: PromiseLike<{ count: number | null; error: unknown }>,
+): Promise<number> {
+  try {
+    const r = await thenable;
+    if (r.error) return 0;
+    return typeof r.count === "number" ? r.count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function coerceChannel(
+  raw: string,
+): "whatsapp" | "email" | "sms" {
+  if (raw === "whatsapp") return "whatsapp";
+  if (raw === "sms") return "sms";
+  return "email";
+}
+
+function coerceAttachments(
+  raw: unknown,
+): PendingDraft["attachments"] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (a): a is { brochure_id: string; title: string; document_type: string } =>
+        !!a &&
+        typeof a === "object" &&
+        typeof (a as { brochure_id?: unknown }).brochure_id === "string" &&
+        typeof (a as { title?: unknown }).title === "string" &&
+        typeof (a as { document_type?: unknown }).document_type === "string",
+    );
+}
+
+export async function getLeadCanvasV2(
+  lead_id: string,
+  client?: SupabaseClient,
+): Promise<CanvasDataV2 | null> {
+  const base = await getLeadCanvas(lead_id, client);
+  if (!base) return null;
+  if (!UUID_RE.test(lead_id)) return null;
+
+  const supabase = client ?? (await createSupabaseServerClient());
+  const org_id = base.lead.organization_id;
+
+  // Bucket the activity stream into chats / calls / emails for badge counts.
+  let chats = 0;
+  let calls = 0;
+  let emails = 0;
+  for (const a of base.activities) {
+    const bucket = bucketActivity(a.data);
+    if (bucket === "chat") chats += 1;
+    else if (bucket === "call") calls += 1;
+    else if (bucket === "email") emails += 1;
+  }
+
+  // Pending drafts (the AI Drafts tab's data source).
+  const draftsResult = await supabase
+    .from("agent_approval_queue")
+    .select(
+      "id, lead_id, agent_kind, channel, draft_body, created_at, attachments, error",
+    )
+    .eq("lead_id", lead_id)
+    .eq("organization_id", org_id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const draftRows = (draftsResult.data ?? []) as PendingDraftRow[];
+  const pending_drafts: PendingDraft[] = draftRows.map((r) => ({
+    id: r.id,
+    lead_id: r.lead_id,
+    agent_kind: r.agent_kind,
+    channel: coerceChannel(r.channel),
+    draft_body: r.draft_body,
+    created_at: r.created_at,
+    attachments: coerceAttachments(r.attachments),
+    error: r.error,
+  }));
+
+  // Row fetches for the Comments / Appointments / Documents tabs. Each
+  // wrapped via safeRows so a schema-not-yet-shipped surface degrades to
+  // [] instead of failing the whole canvas render.
+  //
+  // Linkage columns (all jsonb paths):
+  //   - note.data.lead_id          (v6.2.1 — added to noteSchema)
+  //   - site_visit.data.lead_id    (D-602)
+  //   - document.data.related_node_id  (existing documentSchema)
+  const [commentRows, appointmentRows, documentRows] = await Promise.all([
+    safeRows<{ id: string; data: unknown; created_at: string; created_by: string; created_via: string }>(
+      supabase
+        .from("nodes")
+        .select("id, data, created_at, created_by, created_via")
+        .eq("organization_id", org_id)
+        .eq("node_type", "note")
+        .is("deleted_at", null)
+        .filter("data->>lead_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
+    safeRows<{
+      id: string;
+      label: string;
+      state: string;
+      data: unknown;
+      created_at: string;
+    }>(
+      supabase
+        .from("nodes")
+        .select("id, label, state, data, created_at")
+        .eq("organization_id", org_id)
+        .eq("node_type", "site_visit")
+        .is("deleted_at", null)
+        .filter("data->>lead_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
+    safeRows<{
+      id: string;
+      label: string;
+      data: unknown;
+      created_at: string;
+      created_by: string;
+    }>(
+      supabase
+        .from("nodes")
+        .select("id, label, data, created_at, created_by")
+        .eq("organization_id", org_id)
+        .eq("node_type", "document")
+        .is("deleted_at", null)
+        .filter("data->>related_node_id", "eq", lead_id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
+  ]);
+
+  const comments: CanvasComment[] = commentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      body: typeof d.body === "string" ? d.body : "",
+      created_at: r.created_at,
+      created_by: r.created_by,
+      created_via: r.created_via,
+    };
+  });
+
+  const appointments: CanvasAppointment[] = appointmentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      label: r.label,
+      state: r.state,
+      scheduled_at:
+        typeof d.scheduled_at === "string" ? d.scheduled_at : null,
+      pickup_address:
+        typeof d.pickup_address === "string" ? d.pickup_address : null,
+      cab_provider:
+        typeof d.cab_provider === "string" ? d.cab_provider : null,
+      assigned_sales_rep_id:
+        typeof d.assigned_sales_rep_id === "string"
+          ? d.assigned_sales_rep_id
+          : null,
+      created_at: r.created_at,
+    };
+  });
+
+  const documents: CanvasDocument[] = documentRows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id,
+      label: r.label,
+      document_type: typeof d.kind === "string" ? d.kind : null,
+      storage_url: typeof d.signed_url === "string" ? d.signed_url : null,
+      created_at: r.created_at,
+      created_by: r.created_by,
+    };
+  });
+
+  const tab_counts: CanvasTabCounts = {
+    updates: base.activities.length,
+    ai_drafts: pending_drafts.length,
+    chats,
+    calls,
+    emails,
+    comments: comments.length,
+    appointments: appointments.length,
+    documents: documents.length,
+  };
+
+  return {
+    ...base,
+    tab_counts,
+    pending_drafts,
+    comments,
+    appointments,
+    documents,
+  };
+}
+
+async function safeRows<T>(
+  thenable: PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[]> {
+  try {
+    const r = await thenable;
+    if (r.error) return [];
+    return Array.isArray(r.data) ? (r.data as T[]) : [];
+  } catch {
+    return [];
+  }
 }

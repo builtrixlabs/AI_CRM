@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
-import { decideRoute } from "@/lib/auth/route-policy";
+import { isMfaFresh } from "@/lib/auth/freshness";
+import { decideRoute, type MfaState } from "@/lib/auth/route-policy";
 
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
@@ -73,7 +74,15 @@ export async function middleware(request: NextRequest) {
     user = null;
   }
 
-  const decision = decideRoute(user, request.nextUrl.pathname);
+  const mfa_state: MfaState | undefined = user
+    ? {
+        enrolled: !!user.profile.mfa_enrolled_at,
+        fresh: isMfaFresh(user.profile.mfa_verified_at ?? null),
+        bypass: process.env.MFA_DEMO_MODE === "true",
+      }
+    : undefined;
+
+  const decision = decideRoute(user, request.nextUrl.pathname, mfa_state);
 
   if (decision.kind === "allow") return response;
 
@@ -81,10 +90,18 @@ export async function middleware(request: NextRequest) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // redirect
+  // redirect — decision.target may be "/path" or "/path?query=value".
+  // Assigning the whole string to url.pathname URL-encodes the "?" to "%3F"
+  // and loses the query. Split first.
   const url = request.nextUrl.clone();
-  url.pathname = decision.target;
-  url.search = "";
+  const qIdx = decision.target.indexOf("?");
+  if (qIdx === -1) {
+    url.pathname = decision.target;
+    url.search = "";
+  } else {
+    url.pathname = decision.target.slice(0, qIdx);
+    url.search = decision.target.slice(qIdx); // includes leading "?"
+  }
   return NextResponse.redirect(url);
 }
 

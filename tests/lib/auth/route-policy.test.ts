@@ -107,17 +107,39 @@ describe("decideRoute — channel_partner (AC-6)", () => {
       kind: "allow",
     });
   });
-  it("channel_partner on /admin → /dashboard", () => {
+  it("channel_partner on /admin → /cp (D-221)", () => {
     expect(decideRoute(u("channel_partner"), "/admin")).toEqual({
+      kind: "redirect",
+      target: "/cp",
+    });
+  });
+  it("channel_partner on /platform → /cp (D-221)", () => {
+    expect(decideRoute(u("channel_partner"), "/platform")).toEqual({
+      kind: "redirect",
+      target: "/cp",
+    });
+  });
+  it("channel_partner on /cp is allowed (D-221)", () => {
+    expect(decideRoute(u("channel_partner"), "/cp")).toEqual({
+      kind: "allow",
+    });
+  });
+  it("channel_partner on /cp/submit is allowed (D-221)", () => {
+    expect(decideRoute(u("channel_partner"), "/cp/submit")).toEqual({
+      kind: "allow",
+    });
+  });
+  it("non-CP operational role on /cp → /dashboard (D-221)", () => {
+    expect(decideRoute(u("sales_rep"), "/cp")).toEqual({
       kind: "redirect",
       target: "/dashboard",
     });
   });
-  it("channel_partner on /platform → /dashboard", () => {
-    expect(decideRoute(u("channel_partner"), "/platform")).toEqual({
-      kind: "redirect",
-      target: "/dashboard",
-    });
+
+  it("unauthenticated /api/* is allowed through (HMAC/Bearer/none-required at the handler)", () => {
+    expect(decideRoute(null, "/api/events/inbox")).toEqual({ kind: "allow" });
+    expect(decideRoute(null, "/api/auth/rate-check")).toEqual({ kind: "allow" });
+    expect(decideRoute(null, "/api/admin/leads/lookup")).toEqual({ kind: "allow" });
   });
 });
 
@@ -161,5 +183,97 @@ describe("decideRoute — unknown paths fall back to landing", () => {
       kind: "redirect",
       target: "/dashboard",
     });
+  });
+});
+
+describe("decideRoute — MFA gate (D-300)", () => {
+  const mfaFresh = { enrolled: true, fresh: true, bypass: false };
+  const mfaStale = { enrolled: true, fresh: false, bypass: false };
+  const mfaUnenrolled = { enrolled: false, fresh: false, bypass: false };
+  const mfaBypass = { enrolled: false, fresh: false, bypass: true };
+
+  it("fresh MFA on sensitive /platform → allow", () => {
+    expect(decideRoute(u("super_admin"), "/platform", mfaFresh)).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("stale MFA on sensitive /platform → redirect /auth/mfa?return=...", () => {
+    expect(decideRoute(u("super_admin"), "/platform", mfaStale)).toEqual({
+      kind: "redirect",
+      target: "/auth/mfa?return=%2Fplatform",
+    });
+  });
+
+  it("unenrolled on sensitive /platform → redirect /auth/mfa/setup?return=...", () => {
+    expect(decideRoute(u("super_admin"), "/platform", mfaUnenrolled)).toEqual({
+      kind: "redirect",
+      target: "/auth/mfa/setup?return=%2Fplatform",
+    });
+  });
+
+  it("env bypass on sensitive /platform → allow regardless of stamp", () => {
+    expect(decideRoute(u("super_admin"), "/platform", mfaBypass)).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("non-sensitive route + stale MFA → allow (no redirect on /dashboard)", () => {
+    expect(decideRoute(u("org_admin"), "/dashboard", mfaStale)).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("MFA gate runs after role redirect — sales_rep on /platform → /dashboard, no MFA layer", () => {
+    expect(decideRoute(u("sales_rep"), "/platform", mfaUnenrolled)).toEqual({
+      kind: "redirect",
+      target: "/dashboard",
+    });
+  });
+
+  it("/admin/billing is sensitive: stale MFA → redirect", () => {
+    expect(decideRoute(u("org_admin"), "/admin/billing", mfaStale)).toEqual({
+      kind: "redirect",
+      target: "/auth/mfa?return=%2Fadmin%2Fbilling",
+    });
+  });
+
+  it("/settings/users is sensitive: stale MFA → redirect", () => {
+    expect(decideRoute(u("org_admin"), "/settings/users", mfaStale)).toEqual({
+      kind: "redirect",
+      target: "/auth/mfa?return=%2Fsettings%2Fusers",
+    });
+  });
+
+  it("/admin/integrations/voice-iq is sensitive", () => {
+    expect(
+      decideRoute(u("org_admin"), "/admin/integrations/voice-iq", mfaUnenrolled)
+    ).toEqual({
+      kind: "redirect",
+      target: "/auth/mfa/setup?return=%2Fadmin%2Fintegrations%2Fvoice-iq",
+    });
+  });
+
+  it("/auth/mfa is itself reachable while stale (the unblock path)", () => {
+    expect(decideRoute(u("super_admin"), "/auth/mfa", mfaStale)).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("/auth/mfa/setup is reachable while unenrolled", () => {
+    expect(
+      decideRoute(u("super_admin"), "/auth/mfa/setup", mfaUnenrolled)
+    ).toEqual({ kind: "allow" });
+  });
+
+  it("mfa_state omitted → no MFA gating (back-compat)", () => {
+    expect(decideRoute(u("super_admin"), "/platform")).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("MFA does not gate API routes (handlers carry their own auth)", () => {
+    expect(decideRoute(u("super_admin"), "/api/admin/leads/lookup", mfaStale))
+      .toEqual({ kind: "allow" });
   });
 });

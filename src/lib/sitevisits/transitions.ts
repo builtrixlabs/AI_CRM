@@ -5,20 +5,30 @@ export const SITE_VISIT_STATES = ALLOWED_STATES.site_visit;
 export type SiteVisitState = (typeof ALLOWED_STATES.site_visit)[number];
 
 /**
- *   scheduled  → confirmed, completed, no_show
- *   confirmed  → completed, no_show
- *   completed  → ∅ (terminal)
- *   no_show    → ∅ (terminal)
+ * D-602 (V6 Phase 1) — 7-state workflow per PRD-v6.0 §D-602, amending
+ * baseline/110 §III.
+ *
+ *   draft       → scheduled, cancelled
+ *   scheduled   → confirmed, in_progress, completed, cancelled, no_show
+ *   confirmed   → in_progress, completed, cancelled, no_show
+ *   in_progress → completed, cancelled
+ *   completed   → ∅ (terminal)
+ *   cancelled   → ∅ (terminal)
+ *   no_show     → ∅ (terminal)
  */
 export const TRANSITIONS: Readonly<Record<SiteVisitState, readonly SiteVisitState[]>> = {
-  scheduled: ["confirmed", "completed", "no_show"],
-  confirmed: ["completed", "no_show"],
+  draft: ["scheduled", "cancelled"],
+  scheduled: ["confirmed", "in_progress", "completed", "cancelled", "no_show"],
+  confirmed: ["in_progress", "completed", "cancelled", "no_show"],
+  in_progress: ["completed", "cancelled"],
   completed: [],
+  cancelled: [],
   no_show: [],
 };
 
 export const TERMINAL_STATES: ReadonlySet<SiteVisitState> = new Set<SiteVisitState>([
   "completed",
+  "cancelled",
   "no_show",
 ]);
 

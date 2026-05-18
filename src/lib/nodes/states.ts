@@ -26,9 +26,36 @@ export const ALLOWED_STATES: Record<NodeType, readonly string[]> = {
     "lost",
     "on_hold",
   ],
+  // Project lifecycle (PRD §3 P8) — Pre-launch / Launch / Construction / OC /
+  // Handover. D-420 ships a stateless project row by default; the lifecycle
+  // states land with the customer-facing project canvas (deferred D-421).
+  project: [],
+  // Tower inherits its parent project's lifecycle. Stateless at the row level.
+  tower: [],
   property: ["available", "held", "booked", "sold"],
-  unit: ["available", "held", "booked", "sold"],
-  site_visit: ["scheduled", "confirmed", "completed", "no_show"],
+  // D-420 — 7-state unit availability machine. Legacy 4-state rows (D-320)
+  // still validate because the old states are a subset of the new set.
+  unit: [
+    "available",
+    "held",
+    "blocked",
+    "booked",
+    "sold",
+    "registered",
+    "possessed",
+  ],
+  // D-602 (V6 Phase 1) amends baseline/110 §III: the 4-state site_visit
+  // lifecycle becomes the 7-state PRD-v6.0 §D-602 workflow. Pre-V6 rows
+  // still validate — the prior states are a strict subset of the new set.
+  site_visit: [
+    "draft",
+    "scheduled",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+    "no_show",
+  ],
   call: [],
   activity: [],
   document: ["uploaded", "verified", "signed"],
@@ -39,8 +66,8 @@ const TERMINAL_STATES: Partial<Record<NodeType, readonly string[]>> = {
   lead: ["lost", "junk", "on_hold"],
   deal: ["lost", "booked", "on_hold"],
   property: ["sold"],
-  unit: ["sold"],
-  site_visit: ["completed", "no_show"],
+  unit: ["possessed"],
+  site_visit: ["completed", "cancelled", "no_show"],
   document: ["signed"],
 };
 

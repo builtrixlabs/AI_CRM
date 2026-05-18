@@ -97,7 +97,7 @@ export function CommandPalette({
 
   const runCommand = useCallback(
     async (cmd: CommandSpec) => {
-      if (cmd.kind === "navigate" || cmd.kind === "placeholder") {
+      if (cmd.kind === "navigate") {
         if (cmd.target) router.push(cmd.target);
         closePalette();
         return;

@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyWhatsAppSignature } from "@/lib/webhooks/whatsapp/signature";
 import { dispatchInboxEvent, recordInboxIngestion } from "@/lib/events/inbox";
 import { getSecret } from "@/lib/secrets/getSecret";
+import { getVoiceIqSecret } from "@/lib/integrations/voice-iq/secret";
+import { withApiAudit } from "@/lib/api/audit-wrapper";
 import type { BuiltrixEvent } from "@/lib/events/types";
 
 export const runtime = "nodejs";
@@ -9,10 +11,39 @@ export const dynamic = "force-dynamic";
 
 const SIGNATURE_HEADER = "x-builtrix-signature";
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+/**
+ * Look up the right HMAC secret for the incoming envelope.
+ *
+ * Order:
+ *   1. Per-org secret if envelope.organization_id is parseable AND a row
+ *      exists in `org_integration_secrets` for `voice_iq_inbox_secret`.
+ *   2. Platform default (`builtrix_event_inbox_secret`).
+ *
+ * If the body is unparseable or the org_id missing, fall back to the
+ * platform default — the body validation upstream will reject the request
+ * after signature passes.
+ */
+async function resolveSecret(rawBody: string): Promise<string> {
+  try {
+    const parsed = JSON.parse(rawBody) as { organization_id?: string };
+    if (
+      parsed &&
+      typeof parsed.organization_id === "string" &&
+      parsed.organization_id.length === 36
+    ) {
+      const orgSecret = await getVoiceIqSecret(parsed.organization_id);
+      if (orgSecret) return orgSecret;
+    }
+  } catch {
+    // unparseable JSON — proceed to platform default
+  }
+  return (await getSecret("builtrix_event_inbox_secret")) ?? "";
+}
+
+async function inboxHandler(req: NextRequest): Promise<NextResponse> {
   const sig = req.headers.get(SIGNATURE_HEADER);
   const raw = await req.text();
-  const secret = (await getSecret("builtrix_event_inbox_secret")) ?? "";
+  const secret = await resolveSecret(raw);
 
   if (!verifyWhatsAppSignature(raw, sig, secret)) {
     return NextResponse.json(
@@ -55,3 +86,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   return NextResponse.json(result, { status: 200 });
 }
+
+export const POST = withApiAudit(inboxHandler, {
+  permission: "events.inbox.write",
+});

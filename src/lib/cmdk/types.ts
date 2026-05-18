@@ -9,11 +9,12 @@ export const COMMAND_GROUPS = [
 ] as const;
 export type CommandGroup = (typeof COMMAND_GROUPS)[number];
 
+// D-617 removed the `placeholder` kind — every Cmd+K command now resolves
+// to a real navigate / action / lookup-prefix destination.
 export const COMMAND_KINDS = [
   "navigate",
   "action",
   "lookup-prefix",
-  "placeholder",
 ] as const;
 export type CommandKind = (typeof COMMAND_KINDS)[number];
 
@@ -27,7 +28,7 @@ export type Command = {
   label: string;
   group: CommandGroup;
   kind: CommandKind;
-  /** URL for `navigate` and `placeholder`. */
+  /** URL for `navigate`. */
   target?: string;
   /** Dispatch key for `action`. */
   action?: ActionKey;

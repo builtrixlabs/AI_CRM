@@ -1,30 +1,50 @@
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
+import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { UserMenu } from "@/components/auth/user-menu";
 
 const NAV = [
   { href: "/admin", label: "Cockpit" },
   { href: "/admin/onboarding", label: "Onboarding" },
   { href: "/admin/dashboards", label: "Dashboards" },
   { href: "/admin/tables", label: "Tables & fields" },
+  { href: "/admin/brochures", label: "Brochures" },
   { href: "/admin/agents", label: "AI agents" },
-  { href: "/admin/directives", label: "Directives" },
+  { href: "/admin/directives", label: "AI Workflows" },
+  { href: "/admin/billing", label: "Billing" },
+  { href: "/admin/system-health", label: "System health" },
+  { href: "/admin/webhooks", label: "Webhooks" },
+  { href: "/admin/apps", label: "App Access" },
   { href: "/settings/users", label: "Users" },
+  { href: "/settings/roles", label: "Roles" },
   { href: "/settings/integrations", label: "Integrations" },
 ];
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getCurrentUser();
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b bg-neutral-900 text-neutral-50">
-        <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between">
+        <div className="mx-auto max-w-7xl px-6 py-3 flex items-center justify-between gap-4">
           <Link href="/admin" className="font-semibold tracking-tight">
             Builtrix · Admin
           </Link>
-          <span className="text-xs text-neutral-400">org_admin</span>
+          {user ? (
+            <UserMenu
+              displayName={user.profile.display_name}
+              email={user.user.email}
+              settingsHref="/dashboard/settings"
+              nameClassName="text-xs text-neutral-400"
+              buttonClassName="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700"
+            />
+          ) : (
+            <span className="text-xs text-neutral-400">org_admin</span>
+          )}
         </div>
       </header>
 

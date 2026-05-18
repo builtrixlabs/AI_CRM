@@ -6,6 +6,37 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 type Mode = "password" | "magic_link";
 type Status = "idle" | "sending" | "sent" | "error";
 
+async function checkRateLimit(
+  email: string
+): Promise<
+  | { ok: true }
+  | { ok: false; retry_after_seconds: number; axis: "ip" | "email" }
+> {
+  try {
+    const res = await fetch("/api/auth/rate-check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (res.status === 429) {
+      const body = await res.json();
+      return {
+        ok: false,
+        retry_after_seconds:
+          typeof body.retry_after_seconds === "number"
+            ? body.retry_after_seconds
+            : 30,
+        axis: body.axis === "email" ? "email" : "ip",
+      };
+    }
+    return { ok: true };
+  } catch {
+    // Fail-open if rate-check is unreachable. Supabase still throttles
+    // server-side; we just don't double-protect.
+    return { ok: true };
+  }
+}
+
 export default function SignInPage() {
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
@@ -44,6 +75,20 @@ export default function SignInPage() {
     e.preventDefault();
     setStatus("sending");
     setErrorMsg(null);
+
+    // D-210 + D-301 — IP and per-account rate limits. Skip the Supabase
+    // auth call when either bucket is exhausted.
+    const rate = await checkRateLimit(email);
+    if (!rate.ok) {
+      setStatus("error");
+      setErrorMsg(
+        rate.axis === "email"
+          ? `Too many attempts on this account. Wait ~${rate.retry_after_seconds}s and try again, or contact support.`
+          : `Too many attempts from this address. Wait ~${rate.retry_after_seconds}s and try again.`
+      );
+      return;
+    }
+
     const supabase = createSupabaseBrowserClient();
 
     if (mode === "password") {
@@ -55,6 +100,23 @@ export default function SignInPage() {
         setStatus("error");
         setErrorMsg(error.message);
         return;
+      }
+      // D-302 — session is valid at the Supabase layer; check that the org
+      // isn't suspended before bouncing home (otherwise the user
+      // silently loops through /auth/sign-in via middleware redirect).
+      try {
+        const me = await fetch("/api/auth/whoami", { cache: "no-store" });
+        const body = await me.json();
+        if (!body.user) {
+          await supabase.auth.signOut();
+          setStatus("error");
+          setErrorMsg(
+            "Your session can't be activated. Your organization may be suspended — contact your admin or support."
+          );
+          return;
+        }
+      } catch {
+        /* if whoami is unreachable, fall through; middleware will catch */
       }
       // Session cookies set by @supabase/ssr; bounce home — middleware routes.
       window.location.href = "/";

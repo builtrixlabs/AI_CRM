@@ -67,3 +67,32 @@ describe("isTerminalState", () => {
     expect(isTerminalState("contact", "anything")).toBe(false);
   });
 });
+
+// D-602 (V6 Phase 1) — amends baseline/110 §III: the site_visit lifecycle
+// grows from 4 to 7 states. Pre-V6 rows still validate (strict subset).
+describe("site_visit lifecycle — D-602 7-state amendment", () => {
+  it("admits the new V6 states draft / in_progress / cancelled", () => {
+    expect(validateState("site_visit", "draft")).toBe(true);
+    expect(validateState("site_visit", "in_progress")).toBe(true);
+    expect(validateState("site_visit", "cancelled")).toBe(true);
+  });
+
+  it("still admits every pre-V6 state", () => {
+    for (const s of ["scheduled", "confirmed", "completed", "no_show"]) {
+      expect(validateState("site_visit", s)).toBe(true);
+    }
+  });
+
+  it("treats cancelled as terminal alongside completed and no_show", () => {
+    expect(isTerminalState("site_visit", "cancelled")).toBe(true);
+    expect(isTerminalState("site_visit", "completed")).toBe(true);
+    expect(isTerminalState("site_visit", "no_show")).toBe(true);
+    expect(isTerminalState("site_visit", "scheduled")).toBe(false);
+    expect(isTerminalState("site_visit", "in_progress")).toBe(false);
+  });
+
+  it("rejects states from other node types", () => {
+    expect(validateState("site_visit", "booked")).toBe(false);
+    expect(validateState("site_visit", "qualified")).toBe(false);
+  });
+});

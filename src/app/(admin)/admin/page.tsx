@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Sparkles, Mic, Boxes, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCockpitData, STEP_IDS } from "@/lib/admin";
+import { ComplianceBadges } from "@/components/compliance/compliance-badges";
+import { SiteVisitCalendar } from "@/components/cockpit/site-visit-calendar";
+import { OnboardingBanner } from "@/components/admin/onboarding-banner";
+import { IntegrationFailureBanner } from "@/components/admin/integration-failure-banner";
+import { AppAccessCard, type AppEntry } from "@/components/admin/app-access-card";
+import { getCockpitData } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { getSiteVisitCalendar } from "@/lib/sitevisits/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +21,39 @@ const PLAN_LABEL: Record<string, string> = {
   custom: "Custom",
 };
 
+const APPS: AppEntry[] = [
+  {
+    slug: "crm",
+    name: "AI CRM",
+    description: "Lead-to-booking pipeline + AI orchestration. This product.",
+    status: "active",
+    Icon: Sparkles,
+    href: "/dashboard",
+  },
+  {
+    slug: "voice_iq",
+    name: "Voice IQ",
+    description: "Call audit + BANT scoring. Already integrated.",
+    status: "active",
+    Icon: Mic,
+    href: "/admin/integrations/voice-iq",
+  },
+  {
+    slug: "pscrm",
+    name: "Post-Sales CRM",
+    description: "Bookings, demand letters, possession, registration.",
+    status: "coming_soon",
+    Icon: Boxes,
+  },
+  {
+    slug: "legal_auditor",
+    name: "Legal Auditor",
+    description: "Document auditing + compliance flagging.",
+    status: "coming_soon",
+    Icon: Scale,
+  },
+];
+
 export default async function AdminCockpitPage(props: {
   searchParams: Promise<{ onboarded?: string }>;
 }) {
@@ -21,56 +61,55 @@ export default async function AdminCockpitPage(props: {
   if (!user) redirect("/auth/sign-in");
   if (!user.org_id) redirect("/dashboard");
 
-  const data = await getCockpitData(user.org_id);
+  const [data, siteVisitDays] = await Promise.all([
+    getCockpitData(user.org_id),
+    getSiteVisitCalendar(user.org_id),
+  ]);
   const sp = await props.searchParams;
   const justFinished = sp.onboarded === "1";
 
-  const stepNumber =
-    data.onboarding.completed
-      ? null
-      : (STEP_IDS as readonly string[]).indexOf(
-          data.onboarding.current_step
-        ) + 1;
-
   return (
     <div className="space-y-6">
-      <header>
+      <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Admin cockpit</h1>
-        <p className="text-sm text-neutral-600">
+        <p className="text-sm text-muted-foreground">
           Account state · configuration · customization. Operational work
           happens on the dashboard.
         </p>
+        <ComplianceBadges
+          rera_number={data.compliance.rera_number}
+          gstin={data.compliance.gstin}
+        />
       </header>
 
       {justFinished && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 p-4 text-sm">
+        <div
+          className="rounded-md border p-4 text-sm"
+          style={{
+            background: "color-mix(in oklch, var(--cc-mint-500) 8%, transparent)",
+            borderColor: "color-mix(in oklch, var(--cc-mint-500) 35%, transparent)",
+          }}
+        >
           Onboarding complete. You can revisit any step from the Onboarding link.
         </div>
       )}
 
-      {!data.onboarding.completed && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 text-amber-900 p-4 text-sm flex items-center justify-between">
-          <span>
-            Resume onboarding · step {stepNumber} of 8
-            {data.onboarding.current_step !== "completed"
-              ? ` (${data.onboarding.current_step.replace(/_/g, " ")})`
-              : ""}
-          </span>
-          <Link
-            href="/admin/onboarding"
-            className="rounded-md bg-amber-900 text-amber-50 text-xs px-3 py-1.5"
-          >
-            Resume →
-          </Link>
-        </div>
-      )}
+      <OnboardingBanner
+        completed={data.onboarding.completed}
+        currentStep={data.onboarding.current_step}
+      />
+
+      {/* Integration failure banners — wire to live failed_jobs counts in
+          a follow-up directive once D-434+ land per-channel queues. */}
+      <IntegrationFailureBanner channel="email" count={0} />
+      <IntegrationFailureBanner channel="telephony" count={0} />
 
       {/* Row 1 — Account state */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Account state
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Subscription</CardTitle>
@@ -87,7 +126,7 @@ export default async function AdminCockpitPage(props: {
                   </Badge>
                 </>
               ) : (
-                <p className="text-neutral-500 text-sm">Not provisioned.</p>
+                <p className="text-sm text-muted-foreground">Not provisioned.</p>
               )}
             </CardContent>
           </Card>
@@ -109,7 +148,7 @@ export default async function AdminCockpitPage(props: {
                 Leads (30d):{" "}
                 <span className="font-mono">{data.usage.leads_30d}</span>
               </p>
-              <p className="text-neutral-500">
+              <p className="text-muted-foreground">
                 AI tokens: <span className="font-mono">— / cap</span>
               </p>
             </CardContent>
@@ -123,24 +162,26 @@ export default async function AdminCockpitPage(props: {
               <p className="text-2xl font-semibold tabular-nums">
                 {data.open_tickets}
               </p>
-              <p className="text-sm text-neutral-600">open tickets</p>
-              <Link
-                href="/admin/support/new"
-                className="text-sm underline text-neutral-900"
-              >
-                File new →
-              </Link>
+              <p className="text-sm text-muted-foreground">open tickets</p>
             </CardContent>
           </Card>
         </div>
       </section>
 
+      {/* Site visit calendar (D-222) */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Site visits · next 7 days
+        </h2>
+        <SiteVisitCalendar days={siteVisitDays} />
+      </section>
+
       {/* Row 2 — Configuration */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Configuration
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Users</CardTitle>
@@ -151,7 +192,7 @@ export default async function AdminCockpitPage(props: {
               </p>
               <Link
                 href="/settings/users"
-                className="text-sm underline text-neutral-900"
+                className="text-sm underline"
               >
                 Manage users →
               </Link>
@@ -163,12 +204,12 @@ export default async function AdminCockpitPage(props: {
               <CardTitle className="text-base">Integrations</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-neutral-600">
-                Email · WhatsApp · Telephony providers.
+              <p className="text-sm text-muted-foreground">
+                Email · WhatsApp · Telephony · SMS providers.
               </p>
               <Link
-                href="/settings/integrations"
-                className="text-sm underline text-neutral-900"
+                href="/admin/integrations"
+                className="text-sm underline"
               >
                 Manage integrations →
               </Link>
@@ -180,12 +221,15 @@ export default async function AdminCockpitPage(props: {
               <CardTitle className="text-base">App access</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-neutral-600">
-                CRM (this) · Call Audit · Legal Auditor.
+              <p className="text-sm text-muted-foreground">
+                CRM, Voice IQ, sister products.
               </p>
-              <p className="text-xs text-neutral-500 mt-2">
-                Cross-product access lands in a later directive.
-              </p>
+              <Link
+                href="/admin/apps"
+                className="text-sm underline"
+              >
+                View app access →
+              </Link>
             </CardContent>
           </Card>
         </div>
@@ -193,10 +237,10 @@ export default async function AdminCockpitPage(props: {
 
       {/* Row 3 — Customization */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Customization
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Dashboards</CardTitle>
@@ -204,7 +248,7 @@ export default async function AdminCockpitPage(props: {
             <CardContent>
               <Link
                 href="/admin/dashboards"
-                className="text-sm underline text-neutral-900"
+                className="text-sm underline"
               >
                 Configure dashboards →
               </Link>
@@ -218,7 +262,7 @@ export default async function AdminCockpitPage(props: {
             <CardContent>
               <Link
                 href="/admin/tables"
-                className="text-sm underline text-neutral-900"
+                className="text-sm underline"
               >
                 Configure tables →
               </Link>
@@ -232,7 +276,7 @@ export default async function AdminCockpitPage(props: {
             <CardContent>
               <Link
                 href="/admin/agents"
-                className="text-sm underline text-neutral-900"
+                className="text-sm underline"
               >
                 Provision agents →
               </Link>
@@ -246,13 +290,48 @@ export default async function AdminCockpitPage(props: {
             <CardContent>
               <Link
                 href="/admin/directives"
-                className="text-sm underline text-neutral-900"
+                className="text-sm underline"
               >
                 Author directives →
               </Link>
             </CardContent>
           </Card>
+
+          {/* D-608 — project ↔ sales-rep mapping. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Projects</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Link href="/admin/projects" className="text-sm underline">
+                Project sales teams →
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* D-610 — pre-sales auto-allocation rules. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Lead allocation</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Link
+                href="/admin/allocation-rules"
+                className="text-sm underline"
+              >
+                Allocation rules →
+              </Link>
+            </CardContent>
+          </Card>
         </div>
+      </section>
+
+      {/* App access — full grid below Customization */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          App access
+        </h2>
+        <AppAccessCard apps={APPS} />
       </section>
     </div>
   );

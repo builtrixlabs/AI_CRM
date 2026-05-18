@@ -27,6 +27,7 @@ export const PERMISSIONS = [
   "settings:manage_users",
   "settings:manage_roles",
   "settings:manage_integrations",
+  "integrations:voice_iq:manage",
   "subscriptions:view",
   "subscriptions:manage",
   "billing:view",
@@ -38,11 +39,21 @@ export const PERMISSIONS = [
   "dashboards:customize",
   "dashboards:view_org_wide",
   "tables:customize",
+  "views:customize",
+  "sources:manage",
   "agents:provision",
   "agents:approve_T2",
   "agents:approve_T3",
   "agents:suspend",
   "agents:view_activity",
+  // D-614 — configure the per-agent-kind auto-send vs require-approval policy.
+  "agents:manage_policies",
+  // v6.2.1 — sales rep approves AI drafts for leads they own. Owner-scoped:
+  // enforced by canApproveQueueItem (reads nodes.data.assigned_sales_rep_id),
+  // not by RLS. Cascades into SALES_REP_OPERATIONAL → all phone-rep roles +
+  // manager / workspace_admin. Skipped on ORG_ADMIN_PLANE (org admins already
+  // hold agents:view_activity).
+  "agents:approve_own_leads",
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
@@ -72,16 +83,6 @@ export const PERMISSIONS = [
   "contacts:edit",
   "contacts:merge",
 
-  // ── Properties / units ──────────────────────────────────────────────────
-  "properties:view",
-  "properties:create",
-  "properties:edit",
-  "properties:hold",
-  "properties:release",
-  "units:view",
-  "units:create",
-  "units:edit",
-
   // ── Activities / calls / campaigns ──────────────────────────────────────
   "activities:view",
   "activities:create",
@@ -98,6 +99,20 @@ export const PERMISSIONS = [
   "site_visits:create",
   "site_visits:edit",
   "site_visits:cancel",
+  // D-602 (V6 Phase 1) — coordinator dashboard + sales-rep assignment.
+  "site_visits:coordinate",
+  "site_visits:assign",
+
+  // ── Projects (D-608) ────────────────────────────────────────────────────
+  "projects:assign_sales",
+
+  // ── Lead allocation (D-610) ─────────────────────────────────────────────
+  "allocation_rules:manage",
+
+  // ── Brochures (D-607) ───────────────────────────────────────────────────
+  "brochures:view",
+  "brochures:upload",
+  "brochures:delete",
 
   // ── Documents / notes ───────────────────────────────────────────────────
   "documents:view",
@@ -143,14 +158,15 @@ const READ_ONLY_OPERATIONAL: Permission[] = [
   "leads:view",
   "deals:view",
   "contacts:view",
-  "properties:view",
-  "units:view",
   "activities:view",
   "calls:view",
   "campaigns:view",
   "site_visits:view",
   "documents:view",
   "notes:view",
+  // D-607 — the brochure repository is readable by every operational role
+  // (cascades to sales_rep / manager / workspace_admin / phone-rep roles).
+  "brochures:view",
 ];
 
 const SALES_REP_OPERATIONAL: Permission[] = [
@@ -169,6 +185,10 @@ const SALES_REP_OPERATIONAL: Permission[] = [
   "notes:create",
   "notes:edit",
   "documents:upload",
+  // v6.2.1 — approve AI-drafted comms on leads this rep owns. Enforced via
+  // canApproveQueueItem owner check; sales reps without ownership see drafts
+  // but cannot approve.
+  "agents:approve_own_leads",
 ];
 
 const MANAGER_OPERATIONAL: Permission[] = [
@@ -181,6 +201,24 @@ const MANAGER_OPERATIONAL: Permission[] = [
   "calls:listen",
   "calls:export",
   "audit:view",
+  // D-602 — managers assign sales reps to site visits.
+  "site_visits:assign",
+  // D-608 — managers map sales reps to projects.
+  "projects:assign_sales",
+  // D-610 — managers configure lead-allocation rules.
+  "allocation_rules:manage",
+  // D-607 — managers upload brochures to the repository (cascades to
+  // workspace_admin).
+  "brochures:upload",
+  // D-615 — managers author AI workflows; a manager-authored workflow
+  // lands pending_approval (runtime-inert) until an org admin approves.
+  // Cascades to workspace_admin.
+  "directives:author",
+  // v6.2.1 — managers get the team rollup view of the agent approval queue
+  // and can approve any draft within their org (cross-team). This also opens
+  // /admin/agents/queue to managers, matching the spec's "Manager rollup view"
+  // evolution of that route.
+  "agents:view_activity",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -191,17 +229,13 @@ const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
   "templates:approve_outbound",
   "documents:verify",
   "documents:sign",
-  // Catalog / bulk operations land at workspace_admin tier
+  // Bulk operations land at workspace_admin tier
   "leads:delete",
   "leads:bulk_import",
-  "properties:create",
-  "properties:edit",
-  "properties:hold",
-  "properties:release",
-  "units:create",
-  "units:edit",
   "campaigns:create",
   "campaigns:execute",
+  // D-607 — workspace admins can delete brochures from the repository.
+  "brochures:delete",
 ];
 
 const ORG_ADMIN_PLANE: Permission[] = [
@@ -211,6 +245,7 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "settings:manage_users",
   "settings:manage_roles",
   "settings:manage_integrations",
+  "integrations:voice_iq:manage",
   "subscriptions:view",
   "audit:view",
   "support:create",
@@ -222,12 +257,28 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "dashboards:customize",
   "dashboards:view_org_wide",
   "tables:customize",
+  "views:customize",
+  "sources:manage",
   "agents:provision",
   "agents:suspend",
   "agents:view_activity",
+  // D-614 — org admin owns the agent send-policy surface.
+  "agents:manage_policies",
   "directives:author",
   "directives:approve",
   "directives:view_org_wide",
+  // D-602 (V6 Phase 1) — org admin oversees the site-visit module.
+  "site_visits:view",
+  "site_visits:coordinate",
+  "site_visits:assign",
+  // D-608 — org admin oversees project <-> sales-rep mapping.
+  "projects:assign_sales",
+  // D-610 — org admin oversees lead-allocation rules.
+  "allocation_rules:manage",
+  // D-607 — org admin owns the brochure repository surface.
+  "brochures:view",
+  "brochures:upload",
+  "brochures:delete",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [
@@ -256,6 +307,35 @@ const CHANNEL_PARTNER_PERMS: Permission[] = [
   "cp:view_commissions",
 ];
 
+// ── V6 role permission sets (D-602, implementation-order §6) ───────────────
+
+// presales_rep / telemarketing_rep / customer_recovery_rep are all
+// phone-first rep roles — the sales_rep operational surface plus call
+// listening. Their dedicated dashboards/queues land in D-605 / D-610 /
+// D-616; D-602 only needs the enum values usable so effectivePermissions
+// never resolves an undefined set.
+const PHONE_REP_OPERATIONAL: Permission[] = [
+  ...SALES_REP_OPERATIONAL,
+  "calls:listen",
+];
+
+// site_visit_coordinator owns cab logistics — a focused read surface plus
+// the site-visit coordinate / assign / edit perms. No lead/deal write.
+const SITE_VISIT_COORDINATOR_OPERATIONAL: Permission[] = [
+  "leads:view",
+  "contacts:view",
+  "activities:view",
+  "calls:view",
+  "site_visits:view",
+  "site_visits:edit",
+  "site_visits:coordinate",
+  "site_visits:assign",
+  "notes:view",
+  "notes:create",
+  // D-607 — coordinators can view brochures (read-only).
+  "brochures:view",
+];
+
 // ── Maps ───────────────────────────────────────────────────────────────────
 
 export const BASE_ROLE_PERMS: Record<BaseRole, ReadonlySet<Permission>> = {
@@ -268,6 +348,11 @@ export const BASE_ROLE_PERMS: Record<BaseRole, ReadonlySet<Permission>> = {
   read_only: new Set(READ_ONLY_OPERATIONAL),
   channel_partner: new Set(CHANNEL_PARTNER_PERMS),
   service_account: new Set<Permission>(),
+  // D-602 (V6 Phase 1) — implementation-order §6 role extension.
+  presales_rep: new Set(PHONE_REP_OPERATIONAL),
+  telemarketing_rep: new Set(PHONE_REP_OPERATIONAL),
+  customer_recovery_rep: new Set(PHONE_REP_OPERATIONAL),
+  site_visit_coordinator: new Set(SITE_VISIT_COORDINATOR_OPERATIONAL),
 };
 
 export const APP_ROLE_PERMS: Record<AppRole, ReadonlySet<Permission>> = {

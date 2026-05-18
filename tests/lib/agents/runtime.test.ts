@@ -18,17 +18,36 @@ function makeAgentClient(opts: {
     max_tier: string;
     prompt_version: string;
   } | null;
+  /** D-019 per-org config; null means agent not provisioned for this org. */
+  org_config?: {
+    id: string;
+    organization_id: string;
+    agent_type: string;
+    enabled: boolean;
+    max_tier_override: string | null;
+    suspended_at: string | null;
+    suspended_reason: string | null;
+  } | null;
 }) {
-  const chain = {
-    select: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
+  const agentChain = {
+    select: vi.fn(() => agentChain),
+    eq: vi.fn(() => agentChain),
     maybeSingle: vi.fn(() =>
       Promise.resolve({ data: opts.agent_row, error: null }),
     ),
   };
+  const orgConfigChain = {
+    select: vi.fn(() => orgConfigChain),
+    eq: vi.fn(() => orgConfigChain),
+    is: vi.fn(() => orgConfigChain),
+    maybeSingle: vi.fn(() =>
+      Promise.resolve({ data: opts.org_config ?? null, error: null }),
+    ),
+  };
   return {
     from: vi.fn((table: string) => {
-      if (table === "agent_service_accounts") return chain;
+      if (table === "agent_service_accounts") return agentChain;
+      if (table === "agent_org_configs") return orgConfigChain;
       throw new Error(`Unexpected table ${table}`);
     }),
   };
@@ -148,6 +167,62 @@ describe("runAgent — happy + error paths", () => {
     const t = makeAgentClient({ agent_row: TEST_AGENT_ROW });
     await expect(
       runAgent({ ...baseInv, action: "tier_throw" }, { client: t as never }),
+    ).rejects.toThrow(TierCeilingExceededError);
+  });
+
+  // D-019 — per-org config layer
+  it("D-019: returns validation error when org has suspended the agent", async () => {
+    const handler = vi.fn(async () => ({
+      ok: true as const,
+      tier: "T1" as const,
+      audit_log_id: null,
+      output: {},
+    }));
+    registerAgentHandler("test_agent", "suspended_action", handler as never);
+    const t = makeAgentClient({
+      agent_row: TEST_AGENT_ROW,
+      org_config: {
+        id: "c1",
+        organization_id: ORG,
+        agent_type: "test_agent",
+        enabled: false,
+        max_tier_override: null,
+        suspended_at: "2026-05-09",
+        suspended_reason: "debug",
+      },
+    });
+    const r = await runAgent(
+      { ...baseInv, action: "suspended_action" },
+      { client: t as never },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBe("validation");
+      expect(r.message).toMatch(/suspended/i);
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("D-019: per-org max_tier_override constrains effective ceiling", async () => {
+    // Global max_tier=T1, org override=T0 → attempting T1 should fail.
+    registerAgentHandler("test_agent", "constrained", vi.fn() as never);
+    const t = makeAgentClient({
+      agent_row: TEST_AGENT_ROW, // max_tier T1
+      org_config: {
+        id: "c1",
+        organization_id: ORG,
+        agent_type: "test_agent",
+        enabled: true,
+        max_tier_override: "T0",
+        suspended_at: null,
+        suspended_reason: null,
+      },
+    });
+    await expect(
+      runAgent(
+        { ...baseInv, action: "constrained", attempted_tier: "T1" },
+        { client: t as never },
+      ),
     ).rejects.toThrow(TierCeilingExceededError);
   });
 });

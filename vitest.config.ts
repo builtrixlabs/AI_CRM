@@ -24,6 +24,7 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: [
         "src/lib/auth/**",
+        "src/lib/booking/**",
         "src/lib/canvas/**",
         "src/components/canvas/**",
         "src/lib/leads/**",
@@ -33,6 +34,7 @@ export default defineConfig({
         "src/lib/ai/gateway.ts",
         "src/lib/ai/types.ts",
         "src/lib/agents/**",
+        "src/lib/comms/resolve-org-adapter.ts",
         "src/lib/nodes/text.ts",
         "src/lib/webhooks/**",
         "src/lib/doe/**",
@@ -41,6 +43,7 @@ export default defineConfig({
         "src/lib/secrets/**",
         "src/app/(dashboard)/dashboard/_actions/**",
         "src/app/(platform)/platform/settings/secrets/**",
+        "src/app/(admin)/admin/directives/actions.ts",
       ],
       exclude: [
         // Thin SDK boundary wrappers; tested indirectly via the

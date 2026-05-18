@@ -30,6 +30,11 @@ export function SignOutButton({
       try {
         const supabase = createSupabaseBrowserClient();
         await supabase.auth.signOut();
+      } catch {
+        // Best-effort: even if the network call fails, we still want to
+        // tear the local session down (the hard-nav clears the SSR cookie
+        // round-trip). Swallow rather than surfacing an unhandled
+        // rejection in the browser console.
       } finally {
         window.location.href = redirectTo;
       }

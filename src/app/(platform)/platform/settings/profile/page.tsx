@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
-import { ProfileForm } from "./profile-form";
+import { ProfileForm } from "@/components/auth/profile-form";
+import { updateOwnProfileAction } from "@/lib/auth/profileActions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function PlatformProfilePage() {
         phone={user.profile.phone ?? null}
         theme={user.profile.theme ?? "system"}
         notification_prefs={user.profile.notification_prefs ?? {}}
+        action={updateOwnProfileAction}
       />
     </div>
   );

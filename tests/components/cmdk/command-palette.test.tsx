@@ -135,14 +135,14 @@ describe("CommandPalette", () => {
     expect(mocks.push).toHaveBeenCalledWith("/auth/sign-in");
   });
 
-  it("activating a placeholder command navigates to /dashboard/placeholder/<slug>", () => {
+  it("activating a lead-filter command navigates to the canned leads view (D-617)", () => {
     renderPalette();
     act(() => {
       dispatchHotkey();
     });
     fireEvent.click(screen.getByTestId("command-lead-show-hot"));
     expect(mocks.push).toHaveBeenCalledWith(
-      "/dashboard/placeholder/hot-leads",
+      "/dashboard/leads?canned=hot-leads",
     );
   });
 

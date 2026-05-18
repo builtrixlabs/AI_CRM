@@ -1,32 +1,17 @@
 import type { Command } from "./types";
 
 /**
- * Allowed slugs for `/dashboard/placeholder/[slug]`. Placeholder commands
- * navigate to one of these; the placeholder route validates the slug.
- */
-export const PLACEHOLDER_SLUGS = [
-  "hot-leads",
-  "new-leads",
-  "contacted-leads",
-  "qualified-leads",
-  "terminal-leads",
-  "leads-magicbricks",
-  "leads-99acres",
-  "leads-walkin",
-  "site-visits-today",
-  "open-deal",
-  "open-contact",
-  "send-feedback",
-] as const;
-
-export type PlaceholderSlug = (typeof PLACEHOLDER_SLUGS)[number];
-
-/**
- * V0 Cmd+K catalog — 30 commands. Locked literal per directive 008.
- * Adding/removing requires a Plan-Mode-reviewed amendment.
+ * V0 Cmd+K catalog. Locked literal per directive 008; adding/removing
+ * requires a Plan-Mode-reviewed amendment.
+ *
+ * D-617 (V6 Phase 1) amendment: the 12 `placeholder`-kind shortcuts are
+ * resolved to real `navigate` destinations (or stripped). The
+ * `/dashboard/placeholder/[slug]` route and the `placeholder` command
+ * kind are removed. `account-keyboard-shortcuts` (mis-wired, no real
+ * destination) is removed.
  */
 export const COMMANDS = [
-  // ── Navigation (9) ────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   {
     id: "nav-dashboard",
     label: "Go to Dashboard",
@@ -58,6 +43,38 @@ export const COMMANDS = [
     kind: "navigate",
     target: "/admin/onboarding",
     requires: ["organizations:edit"],
+  },
+  {
+    id: "nav-admin-directives",
+    label: "Admin · AI Workflows",
+    group: "navigation",
+    kind: "navigate",
+    target: "/admin/directives",
+    requires: ["directives:author"],
+  },
+  {
+    id: "nav-admin-agents",
+    label: "Admin · AI agents",
+    group: "navigation",
+    kind: "navigate",
+    target: "/admin/agents",
+    requires: ["agents:provision"],
+  },
+  {
+    id: "nav-admin-tables",
+    label: "Admin · Tables & fields",
+    group: "navigation",
+    kind: "navigate",
+    target: "/admin/tables",
+    requires: ["tables:customize"],
+  },
+  {
+    id: "nav-admin-dashboards",
+    label: "Admin · Dashboards",
+    group: "navigation",
+    kind: "navigate",
+    target: "/admin/dashboards",
+    requires: ["dashboards:customize"],
   },
   {
     id: "nav-audit",
@@ -119,68 +136,72 @@ export const COMMANDS = [
     action: "open-lead-by-name",
     requires: ["leads:view"],
   },
+  // D-617 — the 5 lead-state shortcuts now navigate to /dashboard/leads
+  // with a canned filter applied (see src/lib/leads/canned-views.ts).
   {
     id: "lead-show-hot",
     label: "Show hot leads",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/hot-leads",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=hot-leads",
     requires: ["leads:view"],
   },
   {
     id: "lead-show-new",
     label: "Show new leads",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/new-leads",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=new-leads",
     requires: ["leads:view"],
   },
   {
     id: "lead-show-contacted",
     label: "Show contacted leads",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/contacted-leads",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=contacted-leads",
     requires: ["leads:view"],
   },
   {
     id: "lead-show-qualified",
     label: "Show qualified leads",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/qualified-leads",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=qualified-leads",
     requires: ["leads:view"],
   },
   {
     id: "lead-show-terminal",
     label: "Show terminal leads (lost / on hold / junk)",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/terminal-leads",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=terminal-leads",
     requires: ["leads:view"],
   },
+  // D-617 — source-specific filters, viable now that D-604 records
+  // `data.source` provenance on every ingested lead.
   {
     id: "lead-source-magicbricks",
     label: "Show leads from magicbricks",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/leads-magicbricks",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=leads-magicbricks",
     requires: ["leads:view"],
   },
   {
     id: "lead-source-99acres",
     label: "Show leads from 99acres",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/leads-99acres",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=leads-99acres",
     requires: ["leads:view"],
   },
   {
     id: "lead-source-walkin",
     label: "Show walk-in leads",
     group: "leads",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/leads-walkin",
+    kind: "navigate",
+    target: "/dashboard/leads?canned=leads-walkin",
     requires: ["leads:view"],
   },
 
@@ -189,24 +210,26 @@ export const COMMANDS = [
     id: "ops-site-visits-today",
     label: "Show today's site visits",
     group: "operations",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/site-visits-today",
+    kind: "navigate",
+    target: "/dashboard/site-visits?bucket=today",
     requires: ["site_visits:view"],
   },
+  // D-617 — the PRD's "lookup-prefix" assumption was wrong (these were
+  // placeholders); they now navigate to the real D-410 list pages.
   {
     id: "ops-open-deal",
-    label: "Open deal by name…",
+    label: "Browse deals",
     group: "operations",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/open-deal",
+    kind: "navigate",
+    target: "/dashboard/deals",
     requires: ["deals:view"],
   },
   {
     id: "ops-open-contact",
-    label: "Open contact by name…",
+    label: "Browse contacts",
     group: "operations",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/open-contact",
+    kind: "navigate",
+    target: "/dashboard/contacts",
     requires: ["contacts:view"],
   },
   {
@@ -226,7 +249,7 @@ export const COMMANDS = [
     requires: ["platform_analytics:view"],
   },
 
-  // ── Account (4) ───────────────────────────────────────────────────────────
+  // ── Account (3) ───────────────────────────────────────────────────────────
   {
     id: "account-toggle-theme",
     label: "Toggle theme",
@@ -241,13 +264,6 @@ export const COMMANDS = [
     group: "account",
     kind: "action",
     action: "sign-out",
-  },
-  {
-    id: "account-keyboard-shortcuts",
-    label: "Help · Keyboard shortcuts",
-    group: "account",
-    kind: "navigate",
-    target: "/dashboard/placeholder/send-feedback",
   },
   {
     id: "account-billing",
@@ -270,8 +286,8 @@ export const COMMANDS = [
     id: "help-feedback",
     label: "Send feedback",
     group: "help",
-    kind: "placeholder",
-    target: "/dashboard/placeholder/send-feedback",
+    kind: "navigate",
+    target: "/dashboard/settings/feedback",
   },
 ] as const satisfies readonly Command[];
 

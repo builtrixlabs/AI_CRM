@@ -7,10 +7,5 @@ export {
   type CommandKind,
   type ActionKey,
 } from "./types";
-export {
-  COMMANDS,
-  PLACEHOLDER_SLUGS,
-  type CommandId,
-  type PlaceholderSlug,
-} from "./catalog";
+export { COMMANDS, type CommandId } from "./catalog";
 export { visibleCommands } from "./permissions";
