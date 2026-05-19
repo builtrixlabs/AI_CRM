@@ -8,6 +8,15 @@ const mocks = vi.hoisted(() => ({
   getLeadCanvas: vi.fn(),
   getCurrentUser: vi.fn(),
   resolveForUser: vi.fn(),
+  getSupabaseAdmin: vi.fn(() => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+        }),
+      }),
+    }),
+  })),
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -17,6 +26,9 @@ vi.mock("@/lib/auth/getCurrentUser", () => ({
 }));
 vi.mock("@/lib/auth/permissions", () => ({
   resolveForUser: mocks.resolveForUser,
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  getSupabaseAdmin: mocks.getSupabaseAdmin,
 }));
 vi.mock("@/app/(dashboard)/dashboard/_actions/leads", () => ({
   createLeadAction: vi.fn(),
@@ -31,6 +43,14 @@ vi.mock("@/components/canvas/custom-fields-block", () => ({
 
 import LeadCanvasPage from "@/app/(dashboard)/dashboard/leads/[id]/page";
 import { DEMO_ACTIVITIES, DEMO_LEAD } from "@/lib/canvas/fixture";
+
+type WorkspaceProps = {
+  canEdit?: boolean;
+  canTransition?: boolean;
+  canCall?: boolean;
+  canPromoteToDeal?: boolean;
+  canScheduleVisit?: boolean;
+};
 
 describe("/dashboard/leads/[id]", () => {
   it("calls notFound() when getLeadCanvas returns null", async () => {
@@ -57,38 +77,56 @@ describe("/dashboard/leads/[id]", () => {
     expect(mocks.notFound).not.toHaveBeenCalled();
   });
 
-  it("passes canEdit/canTransition=true when user has leads:edit", async () => {
+  it("passes the resolved perm bundle to LeadWorkspace", async () => {
     mocks.getLeadCanvas.mockResolvedValue({
       lead: DEMO_LEAD,
       activities: DEMO_ACTIVITIES,
     });
     mocks.getCurrentUser.mockResolvedValue({
       user: { id: "u", email: "" },
-      profile: { id: "u", display_name: "u", base_role: "sales_rep" },
+      profile: { id: "u", display_name: "u", base_role: "sales_rep", phone: null },
       org_id: DEMO_LEAD.organization_id,
       workspace_ids: [DEMO_LEAD.workspace_id],
       app_roles: [],
     });
-    mocks.resolveForUser.mockReturnValue(new Set(["leads:edit"]));
+    mocks.resolveForUser.mockReturnValue(
+      new Set([
+        "leads:edit",
+        "deals:create",
+        "calls:listen",
+        "site_visits:view",
+      ]),
+    );
     const result = (await LeadCanvasPage({
       params: Promise.resolve({ id: DEMO_LEAD.id }),
-    })) as {
-      props: {
-        children?: ReadonlyArray<{ props?: { canEdit?: boolean; canTransition?: boolean } } | unknown>;
-      };
-    };
-    // D-321 — page now wraps LeadCanvas in a <div> containing an optional
-    // PromoteToDealButton. Find the LeadCanvas element by descending into
-    // the children array.
-    const children = (result.props.children ?? []) as ReadonlyArray<unknown>;
-    const leadCanvas = children.find(
-      (c): c is { props: { canEdit: boolean; canTransition: boolean } } =>
-        typeof c === "object" &&
-        c !== null &&
-        "props" in (c as object) &&
-        typeof (c as { props: { canEdit?: unknown } }).props.canEdit === "boolean"
-    );
-    expect(leadCanvas?.props.canEdit).toBe(true);
-    expect(leadCanvas?.props.canTransition).toBe(true);
+    })) as { props: WorkspaceProps };
+    expect(result.props.canEdit).toBe(true);
+    expect(result.props.canTransition).toBe(true);
+    expect(result.props.canCall).toBe(true);
+    expect(result.props.canPromoteToDeal).toBe(true);
+    expect(result.props.canScheduleVisit).toBe(true);
+  });
+
+  it("denies the action perms when the user lacks them", async () => {
+    mocks.getLeadCanvas.mockResolvedValue({
+      lead: DEMO_LEAD,
+      activities: DEMO_ACTIVITIES,
+    });
+    mocks.getCurrentUser.mockResolvedValue({
+      user: { id: "u", email: "" },
+      profile: { id: "u", display_name: "u", base_role: "read_only", phone: null },
+      org_id: DEMO_LEAD.organization_id,
+      workspace_ids: [DEMO_LEAD.workspace_id],
+      app_roles: [],
+    });
+    mocks.resolveForUser.mockReturnValue(new Set());
+    const result = (await LeadCanvasPage({
+      params: Promise.resolve({ id: DEMO_LEAD.id }),
+    })) as { props: WorkspaceProps };
+    expect(result.props.canEdit).toBe(false);
+    expect(result.props.canTransition).toBe(false);
+    expect(result.props.canCall).toBe(false);
+    expect(result.props.canPromoteToDeal).toBe(false);
+    expect(result.props.canScheduleVisit).toBe(false);
   });
 });

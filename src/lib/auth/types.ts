@@ -47,6 +47,26 @@ export type NotificationPrefs = {
   digest_frequency?: "off" | "daily" | "weekly";
 };
 
+/**
+ * D-606 — active super-admin impersonation context, overlaid on
+ * `getCurrentUser()` when a valid impersonation_session cookie is present
+ * AND the underlying auth user still holds `platform:manage`.
+ *
+ * When `impersonation` is non-null, the returned `CurrentUser` carries:
+ *   - `org_id` = the impersonated org
+ *   - `profile.base_role` = `org_admin`
+ *   - `user.user.id` / `profile.id` = the super admin's real ids (so
+ *     `audit_log.actor_id` writes preserve provenance — the `on_behalf_of`
+ *     column carries the impersonated org_id).
+ */
+export type Impersonation = {
+  impersonator_id: string;
+  organization_id: string;
+  organization_name?: string | null;
+  started_at: string;
+  expires_at: string;
+};
+
 export type CurrentUser = {
   user: { id: string; email: string };
   profile: {
@@ -64,4 +84,6 @@ export type CurrentUser = {
   org_id: string | null;
   workspace_ids: string[];
   app_roles: AppRoleAssignment[];
+  /** D-606 — non-null iff the request is inside an active impersonation. */
+  impersonation?: Impersonation | null;
 };

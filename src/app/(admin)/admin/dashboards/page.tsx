@@ -76,24 +76,35 @@ export default async function AdminDashboardsPage() {
                 <span className="text-xs text-neutral-500">
                   {new Date(d.created_at).toLocaleDateString()}
                 </span>
-                <form action={dashboardsFormAction}>
-                  <input type="hidden" name="intent" value="delete" />
-                  <input type="hidden" name="id" value={d.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-rose-700 hover:underline"
-                    data-testid={`delete-dashboard-${d.id}`}
-                    onClick={(e) => {
-                      if (
-                        !confirm(`Delete dashboard "${d.name}"?`)
-                      ) {
-                        e.preventDefault();
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                </form>
+                <div className="flex items-center gap-3">
+                  {perms.has("dashboards:publish_to_team") && (
+                    <Link
+                      href={`/admin/dashboards/${d.id}/teams`}
+                      className="text-xs underline text-neutral-600 hover:text-foreground"
+                      data-testid={`publish-dashboard-${d.id}`}
+                    >
+                      Publish to team
+                    </Link>
+                  )}
+                  <form action={dashboardsFormAction}>
+                    <input type="hidden" name="intent" value="delete" />
+                    <input type="hidden" name="id" value={d.id} />
+                    <button
+                      type="submit"
+                      className="text-xs text-rose-700 hover:underline"
+                      data-testid={`delete-dashboard-${d.id}`}
+                      onClick={(e) => {
+                        if (
+                          !confirm(`Delete dashboard "${d.name}"?`)
+                        ) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </form>
+                </div>
               </div>
             </CardContent>
           </Card>

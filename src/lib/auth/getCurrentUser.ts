@@ -1,7 +1,10 @@
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AppRole, BaseRole, CurrentUser } from "./types";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getImpersonationCookiePayload } from "@/lib/platform/impersonation";
+import { effectivePermissions } from "@/lib/auth/rbac";
+import type { AppRole, BaseRole, CurrentUser, Impersonation } from "./types";
 
 type ProfileRow = {
   id: string;
@@ -109,6 +112,42 @@ async function _getCurrentUserImpl(
   const theme: "light" | "dark" | "system" =
     themeRaw === "light" || themeRaw === "dark" ? themeRaw : "system";
 
+  // D-606 — impersonation overlay. The cookie payload is the source of
+  // truth; if valid AND the underlying auth user still holds
+  // platform:manage AND the cookie's impersonator_id matches the live
+  // auth user, the returned CurrentUser is overlayed onto the target org.
+  const impersonation = await resolveImpersonationOverlay({
+    auth_user_id: user.id,
+    base_role: profile.base_role as BaseRole,
+    bridge_app_roles: app_roles.map((r) => r.app_role),
+  });
+
+  if (impersonation) {
+    return {
+      user: { id: user.id, email: user.email ?? "" },
+      profile: {
+        id: profile.id,
+        display_name: profile.display_name,
+        // Overlay: while impersonating, the request executes as an
+        // org_admin (the highest org-tier role) on the target org.
+        base_role: "org_admin" as BaseRole,
+        phone: profile.phone ?? null,
+        notification_prefs:
+          (profile.notification_prefs as
+            | import("./types").NotificationPrefs
+            | undefined) ?? {},
+        theme,
+        mfa_verified_at: profile.mfa_verified_at ?? null,
+        mfa_enrolled_at: profile.mfa_enrolled_at ?? null,
+        view_defaults: (profile.view_defaults as Record<string, string> | null) ?? {},
+      },
+      org_id: impersonation.organization_id,
+      workspace_ids: [],
+      app_roles: [],
+      impersonation,
+    };
+  }
+
   return {
     user: { id: user.id, email: user.email ?? "" },
     profile: {
@@ -128,5 +167,55 @@ async function _getCurrentUserImpl(
     org_id: profile.organization_id,
     workspace_ids,
     app_roles,
+    impersonation: null,
+  };
+}
+
+/**
+ * D-606 — read the impersonation cookie + cross-check the caller. Returns
+ * the Impersonation context to overlay, or null if any check fails.
+ *
+ * Defence-in-depth:
+ *   1. cookie present, signature valid, not expired   (verify in lib/impersonation)
+ *   2. cookie's impersonator_id === live auth.getUser().id
+ *      (catches a stolen cookie replayed from another browser)
+ *   3. caller's base/app role permissions still include `platform:manage`
+ *      (catches a super admin whose role was revoked mid-session)
+ */
+async function resolveImpersonationOverlay(args: {
+  auth_user_id: string;
+  base_role: BaseRole;
+  bridge_app_roles: AppRole[];
+}): Promise<Impersonation | null> {
+  const payload = await getImpersonationCookiePayload();
+  if (!payload) return null;
+  if (payload.i !== args.auth_user_id) return null;
+  const perms = effectivePermissions({
+    base_role: args.base_role,
+    bridge_app_roles: args.bridge_app_roles,
+    org_allow_overrides: [],
+    org_deny_overrides: [],
+  });
+  if (!perms.has("platform:manage")) return null;
+
+  // Best-effort org-name lookup for the banner.
+  let organization_name: string | null = null;
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("organizations")
+      .select("name")
+      .eq("id", payload.o)
+      .maybeSingle();
+    organization_name = (data as { name: string } | null)?.name ?? null;
+  } catch {
+    organization_name = null;
+  }
+
+  return {
+    impersonator_id: payload.i,
+    organization_id: payload.o,
+    organization_name,
+    started_at: payload.s,
+    expires_at: payload.e,
   };
 }

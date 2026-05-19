@@ -64,6 +64,9 @@ const landingFor = (user: CurrentUser): string => {
       return SURFACES.admin;
     case "channel_partner":
       return SURFACES.cp;
+    // D-616 — customer_recovery_rep lands on their dedicated queue.
+    case "customer_recovery_rep":
+      return `${SURFACES.dashboard}/recovery`;
     default:
       return SURFACES.dashboard;
   }

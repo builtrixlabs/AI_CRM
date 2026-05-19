@@ -54,6 +54,8 @@ export type PlatformCounts = {
 
 export type AuditFilters = {
   organization_id?: string | null;
+  /** D-606 — filter by actor_id (the user who performed the action). */
+  user_id?: string | null;
   action?: string | null;
   from_ts?: string | null;
   to_ts?: string | null;

@@ -38,6 +38,8 @@ export const PERMISSIONS = [
   "apps:manage",
   "dashboards:customize",
   "dashboards:view_org_wide",
+  // D-612 — publish a dashboard to a specific team (manager + org_admin).
+  "dashboards:publish_to_team",
   "tables:customize",
   "views:customize",
   "sources:manage",
@@ -107,6 +109,14 @@ export const PERMISSIONS = [
   "brochures:view",
   "brochures:upload",
   "brochures:delete",
+
+  // ── Customer Recovery (D-616) ───────────────────────────────────────────
+  // recovery:view — see the queue; held by recovery_rep + manager + org_admin.
+  // recovery:claim / recovery:resolve — work the queue; held by recovery_rep
+  // + manager (so a manager can clear a stuck row a rep can't).
+  "recovery:view",
+  "recovery:claim",
+  "recovery:resolve",
 
   // ── Documents / notes ───────────────────────────────────────────────────
   "documents:view",
@@ -204,6 +214,14 @@ const MANAGER_OPERATIONAL: Permission[] = [
   // lands pending_approval (runtime-inert) until an org admin approves.
   // Cascades to workspace_admin.
   "directives:author",
+  // D-616 — managers see the recovery queue + can claim/resolve when a
+  // rep is unavailable. Cascades to workspace_admin.
+  "recovery:view",
+  "recovery:claim",
+  "recovery:resolve",
+  // D-612 — managers publish dashboards to teams. Cascades to
+  // workspace_admin.
+  "dashboards:publish_to_team",
 ];
 
 const WORKSPACE_ADMIN_OPERATIONAL: Permission[] = [
@@ -264,6 +282,10 @@ const ORG_ADMIN_PLANE: Permission[] = [
   "brochures:view",
   "brochures:upload",
   "brochures:delete",
+  // D-616 — org admin oversees the customer recovery queue.
+  "recovery:view",
+  // D-612 — org admin publishes dashboards to teams.
+  "dashboards:publish_to_team",
 ];
 
 const SUPER_ADMIN_PERMS: Permission[] = [
@@ -304,6 +326,15 @@ const PHONE_REP_OPERATIONAL: Permission[] = [
   "calls:listen",
 ];
 
+// D-616 — customer_recovery_rep is a phone-first rep that ALSO owns the
+// recovery queue: they see it, claim items off it, and resolve them.
+const CUSTOMER_RECOVERY_REP_OPERATIONAL: Permission[] = [
+  ...PHONE_REP_OPERATIONAL,
+  "recovery:view",
+  "recovery:claim",
+  "recovery:resolve",
+];
+
 // site_visit_coordinator owns cab logistics — a focused read surface plus
 // the site-visit coordinate / assign / edit perms. No lead/deal write.
 const SITE_VISIT_COORDINATOR_OPERATIONAL: Permission[] = [
@@ -336,7 +367,7 @@ export const BASE_ROLE_PERMS: Record<BaseRole, ReadonlySet<Permission>> = {
   // D-602 (V6 Phase 1) — implementation-order §6 role extension.
   presales_rep: new Set(PHONE_REP_OPERATIONAL),
   telemarketing_rep: new Set(PHONE_REP_OPERATIONAL),
-  customer_recovery_rep: new Set(PHONE_REP_OPERATIONAL),
+  customer_recovery_rep: new Set(CUSTOMER_RECOVERY_REP_OPERATIONAL),
   site_visit_coordinator: new Set(SITE_VISIT_COORDINATOR_OPERATIONAL),
 };
 

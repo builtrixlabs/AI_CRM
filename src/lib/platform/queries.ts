@@ -157,6 +157,7 @@ export async function recentAuditRows(
     .limit(Math.min(limit, 1000));
 
   if (filters.organization_id) q = q.eq("organization_id", filters.organization_id);
+  if (filters.user_id) q = q.eq("actor_id", filters.user_id);
   if (filters.action) q = q.eq("action", filters.action);
   if (filters.from_ts) q = q.gte("ts", filters.from_ts);
   if (filters.to_ts) q = q.lte("ts", filters.to_ts);
