@@ -11,6 +11,7 @@ import { autoSuspendCron } from "@/lib/inngest/functions/auto-suspend";
 import { presalesAllocationOnLeadCreated } from "@/lib/inngest/functions/presales-allocation";
 import { brochureAgentOnRequest } from "@/lib/inngest/functions/brochure-agent";
 import { siteVisitAgentOnRequest } from "@/lib/inngest/functions/site-visit-agent";
+import { customerRecoverySweep } from "@/lib/inngest/functions/customer-recovery-sweep";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -29,5 +30,7 @@ export const { GET, POST, PUT } = serve({
     brochureAgentOnRequest,
     // D-601 — Site Visit Booking Agent on agent/site_visit.requested.
     siteVisitAgentOnRequest,
+    // D-616 — Customer Recovery sweep on the 6h cron.
+    customerRecoverySweep,
   ],
 });

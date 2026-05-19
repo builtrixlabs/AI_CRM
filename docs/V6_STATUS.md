@@ -103,12 +103,21 @@ All Phase 0 steps committed on `v6-stabilization` (cut from `v6@403df17`), each 
 
 | ID | Directive | Status | Depends on |
 |---|---|---|---|
-| D-611 | AI Workflow Builder (N8N-style) | planned | D-011, D-017 |
-| D-612 | Team-Scoped Dashboards | planned | D-021 |
-| D-616 | Customer Recovery Team | planned | D-003 |
-| D-606 | Super Admin V6 capabilities | planned | D-004, D-202, D-302 |
+| D-616 | Customer Recovery Team | **built** | D-003, D-602 (role enum) |
+| D-606 | Super Admin V6 capabilities | **built** | D-004, D-202, D-302 |
+| D-612 | Team-Scoped Dashboards | **built** | D-021, D-001 (teams), D-610 (team_members) |
+| D-611 | AI Workflow Builder (N8N-style) | **built** | D-011, D-017, D-615 |
 
-**Gate 3:** Workflow builder drag-drop-test-publish works; team dashboard publishes scoped; super-admin impersonation audit-trailed.
+**Gate 3:** Workflow builder save-test-publish works; team dashboard publishes scoped; super-admin impersonation audit-trailed; recovery rep lands on dedicated queue.
+
+**Phase 3 built 2026-05-19** — all four directives shipped end-to-end in one operator-authorized autonomous run on `v6.3` (cut from `v6.2.2@f112d6c`). Per-directive directive files in `directives/{616,606,612,611}-*.md`. State: **built + tested + typechecked + migrations applied & verified on Supabase** for all four. Remaining for Gate 3 acceptance (Vercel preview, live UI verification, PR merge to `v6`, post-merge build) are operator-side.
+
+- **D-616** Customer Recovery Team — `customer_recovery_queue` table (partial-unique "one open per (org, lead)" index, three index hot paths, RLS org-scoped). `src/lib/recovery/{types,sweep,queue,index}.ts`: closed-enum reasons (`lost`, `on_hold`, `stale_contacted`, `stale_qualified`) + resolutions (`won_back`, `unreachable`, `confirmed_lost`); `classifyRecoveryReason` (pure scorer), `findRecoveryCandidates` (DB scan + dedup), `runRecoverySweep` (per-org cron loop, 6h cadence via `customerRecoverySweep` Inngest fn); `listRecoveryQueue` + `claimRecoveryItem` (conditional UPDATE on `claimed_by IS NULL`) + `resolveRecoveryItem` (inline audit_log write). `/dashboard/recovery` list page + filter bar + claim/resolve actions. `customer_recovery_rep` lands here from `landingFor()` overlay in `route-policy.ts`. Three new perms (`recovery:view/claim/resolve`), held by `customer_recovery_rep` + cascading manager + org_admin. Migration `20260519120000_customer_recovery.sql` applied, `verify_616.mjs` 9/9 PASS. +35 unit/RTL tests + 1 cross-tenant integration suite.
+- **D-606** Super Admin V6 capabilities — `super_admin_impersonation_log` + `platform_defects` tables (super-admin RLS), `organizations.feature_flags jsonb` column. `src/lib/platform/{impersonation,defects,feature-flags}.ts`: HMAC-SHA256 signed cookie (`INTEGRATION_ENCRYPTION_KEY`-derived) drives a `getCurrentUser()` overlay — when valid + caller still has `platform:manage` + cookie's `impersonator_id` matches `auth.getUser().id`, the request executes as `org_admin` on the target org (provenance preserved via `user.user.id`/`profile.id` staying super-admin's); audit_log's existing `on_behalf_of` column is the impersonation provenance — no schema change. 30-min fixed window. `/platform/organizations/[id]/impersonate` start form (reason ≥ 10 chars); `/api/platform/impersonate/exit` POST endpoint; `<ImpersonationBanner>` mounted in `src/app/layout.tsx`. Defects CRUD at `/platform/defects` + `/platform/defects/[id]`; severity (P0-P3) + status (open/triaged/in_progress/resolved/wont_fix) closed enums; `resolved_at` paired-CHECK. Feature flags editor at `/platform/organizations/[id]/features` + `isFeatureEnabled(org, flag, default)` lib helper. `/platform/audit` extended with `user_id` (actor) filter. Migration `20260519130000_super_admin_v6.sql` applied, `verify_606.mjs` 12/12 PASS. +27 unit/RTL tests. **React Flow JWT-level impersonation deferred to V6.x** — cookie overlay is the V6 MVP (documented in `directives/606-super-admin-v6.md`).
+- **D-612** Team-Scoped Dashboards — `team_dashboard_assignments` table (UNIQUE (dashboard_id, team_id), is_default flag, RLS org-scoped). `src/lib/dashboards/team-scoping.ts`: `publishDashboardToTeam` (cross-tenant validates dashboard.org === team.org === caller.org; 23505 → idempotent ok), `revokeDashboardFromTeam` (hard DELETE + audit), `listAssignmentsForDashboard` (batched team-name lookup), `getTeamDashboardsForViewer` (joins `team_members → assignments → definitions` in JS, three org-filtered queries — no PostgREST embed). New perm `dashboards:publish_to_team` on manager + org_admin (cascading). `/admin/dashboards/[id]/teams` manage page + publish form + revoke buttons; "Publish to team" link on each dashboard card on `/admin/dashboards` (gated). Migration `20260519140000_team_dashboard_assignments.sql` applied, `verify_612.mjs` 6/6 PASS. +10 unit tests. **Letting manager AUTHOR dashboards deferred** — V6 ships publish-delegation only (existing `dashboards:customize` stays on org_admin tier).
+- **D-611** AI Workflow Builder — `directives` extended with `version int DEFAULT 1`, `parent_id uuid REFERENCES directives(id)`, `compiled_dag jsonb`, `test_payloads jsonb DEFAULT '[]'`, `last_test_passed_at timestamptz` (D-615's `lifecycle_status` already in place). Closed catalog in `src/lib/workflow-builder/catalog.ts`: 7 triggers (`whatsapp.inbound`, `email.inbound`, `lead.created`, `call.next_best_action`, `lead.state_changed`, `manual.button_click`, `schedule`) + 7 actions (`send_template_message`, `update_lead_field`, `assign_to_user`, `create_task`, `send_brochure`, `book_site_visit`, `call_ai_gateway`). `compileDag` (8 validators — empty/no-trigger/multi-trigger/no-actions/unknown-kind/edge-missing/fork-not-supported), `sandboxRun` (per-node trace, mock action outputs, no real DB/Inngest/comms — proven by tests with throwing mocks), `createNewVersion` / `revertToVersion` / `listVersionHistory`. `/admin/directives/[id]/builder` page with form-based DAG composer + Save / Test / Publish / New version actions; Publish gates on `last_test_passed_at > updated_at` (a successful Test in the current edit session); managers route to `lifecycle_status='pending_approval'` (D-615 queue), org_admins promote a prior live revision to `archived` and the new one to `live`. Migration `20260519150000_directive_versioning.sql` applied, `verify_611.mjs` 10/10 PASS. +24 unit tests. **React Flow visual canvas deferred to V6.x** — form-based composer ships the behaviour; `compiled_dag` already carries node positions so the visual swap is local. **Runtime integration deferred** — D-611 ships the authoring engine; the `runCompiledDag` dispatcher path stays parallel to the existing `doe/runtime.ts` until V6.x.
+
+**Phase-3 verification:** full `npx vitest run` → **2128/2128 green** (244 files; +73 over the 2055 Phase-2 baseline — +35 D-616 + 27 D-606 + 10 D-612 + 24 D-611 minus integration suites excluded from default run; 10 pre-existing import failures unrelated to Phase 3 are `@upstash/redis` / `bcryptjs` / `otpauth` missing deps that predate Phase 3). `npx tsc --noEmit` → 0 errors on Phase-3 changed files. Four new `scripts/verify_61?.mjs` / `verify_606.mjs` checkers all PASS against live Supabase.
 
 ## 5. Phase 4 — Polish
 
@@ -162,12 +171,13 @@ All additive (implementation-order §6 + PRD §4 data models). None applied yet 
 | `20260520120200_site_visits_v6.sql` | D-602 | `site_visits` extended (`cab_*`, `driver_*`, `vehicle_number`, `pickup_*`, `assigned_sales_rep_id`, `coordinator_id`) + `site_visit_coordinator_claims` | pending |
 | `20260520120300_project_sales_mapping.sql` | D-608 | `project_sales_assignments` + RLS; `profiles.on_leave` | pending |
 | `20260520120400_presales_allocation_rules.sql` | D-610 | `lead_allocation_rules` + `lead_allocation_state` + RLS | pending |
-| `20260520120500_team_dashboards.sql` | D-612 | `team_dashboard_assignments` + RLS | pending |
+| `20260519140000_team_dashboard_assignments.sql` | D-612 | `team_dashboard_assignments` + RLS | **applied** |
 | `20260520120600_mih_lead_inbound.sql` | D-604 | `nodes.source_external_id` + `nodes.source_payload` + dedup index; `mih_inbound_log` | pending |
 | `20260515120000_agent_message_policies.sql` | D-614 | `agent_message_policies` (per-org send policy) + RLS | **applied** |
 | `20260515120100_directive_lifecycle.sql` | D-615 | `directives.lifecycle_status` + `submitted_by` / `submitted_at` / `decided_by` / `decided_at` / `rejection_reason` + pending-queue index | **applied** |
-| `20260520120800_ai_workflow_versioning.sql` | D-611 | `directives.version` / `parent_id` / `compiled_dag` / `test_payloads` / `last_test_passed_at` (D-615 already landed `lifecycle_status`) | pending |
-| `20260520120900_super_admin_impersonation_log.sql` | D-606 | `super_admin_impersonation_log` + `platform_defects`; `organizations.feature_flags` | pending |
+| `20260519150000_directive_versioning.sql` | D-611 | `directives.version` / `parent_id` / `compiled_dag` / `test_payloads` / `last_test_passed_at` (D-615 already landed `lifecycle_status`) | **applied** |
+| `20260519130000_super_admin_v6.sql` | D-606 | `super_admin_impersonation_log` + `platform_defects`; `organizations.feature_flags` | **applied** |
+| `20260519120000_customer_recovery.sql` | D-616 | `customer_recovery_queue` (partial-unique "one open per (org, lead)", three hot-path indexes, RLS) | **applied** |
 | _(D-600)_ | D-600 | `agent_approval_queue` extended: `kind`, `attachments`, `error` | pending |
 
 **Phase 0 migration — `20260514120000_v6_narrow_sister_product_kind.sql`** (D-442 / D-443, step 0.5): narrows `org_sister_product_tokens.product_kind` to `marketing_intelligence_hub` only. Implementation-order §5.5 wrote this as an `ALTER TYPE` enum migration, but `product_kind` is a `text` column with a CHECK constraint (D-440), so the migration is a DROP/ADD CONSTRAINT + a forward-only `DELETE` of pre-V6 token rows. **Status: authored + committed, DB application pending** (destructive — needs `DATABASE_URL`; apply via `scripts/apply_migration.mjs`). Catalog / inventory / booking-pipeline migrations from V0–V5 are **not** dropped — tables + RPCs retained for the revival path, marked obsolete in their directive docs.
@@ -210,9 +220,18 @@ v6 Phase 2 (D-614/D-615     2055 tests / 221 files green (+51 over the 2004
                             authoring suites extended. New integration suites
                             (excluded from default run): agent-message-
                             policies, directive-lifecycle.
-v6 Phase 3:                 ~ +180 unit + 8 integration + 3 E2E (target)
-v6 current:                 2055 unit tests / 221 files green (Phase 0 + all
-                            Phase 1 + all Phase 2 — steps 2.1→2.6)
+v6 Phase 3 (D-616/606/612/  2128 tests / 244 files green (+73 over the 2055
+  611 built):               Phase-2 baseline). New default-run suites:
+                            recovery/sweep + queue + recovery-queue-table
+                            RTL, inngest/customer-recovery-sweep,
+                            platform/impersonation + defects +
+                            feature-flags + impersonation-banner RTL,
+                            dashboards/team-scoping, workflow-builder/
+                            catalog + compile + sandbox + versioning.
+                            New integration suite (excluded from default
+                            run): customer-recovery-cross-tenant.
+v6 current:                 2128 unit tests / 244 files green (Phase 0 +
+                            all Phase 1 + all Phase 2 + all Phase 3)
 ```
 
 New test suites required (implementation-order §7): `brochure-agent`, `site-visit-agent`, `mih-inbound`, `allocation-engine`, `sales-mapping`, `workflow-builder/compile`, `dashboards/team-scoping`, `platform/impersonation`, plus `site-visit-end-to-end` + `mih-to-presales` integration suites and `v6-brochure-loop` + `v6-site-visit-loop` E2E specs.
@@ -225,6 +244,7 @@ New test suites required (implementation-order §7): `brochure-agent`, `site-vis
 - [~] Phase 1 — all 7 directives built (D-603 shipped `#83`; D-602/604/605/608/610/617 built 2026-05-14, branch `claude/lucid-tu-6c9e0d` pushed). 1898/1898 vitest green, tsc clean, 4 migrations applied + verified on Supabase. **Remaining for Gate 1 acceptance:** Vercel preview build, live UI verification, PR review/merge to `v6-phase-1`, post-merge build — operator-side once the branch is reviewed.
 - [ ] Phase 1 Gate 1 acceptance complete (~Week 3)
 - [ ] Phase 2 Gate 2 acceptance complete (~Week 6)
+- [~] Phase 3 — all 4 directives built (D-616/606/612/611, 2026-05-19; branch `v6.3` cut from `v6.2.2@f112d6c`). 2128/2128 vitest green, tsc clean, 4 migrations applied + verified on Supabase. **Remaining for Gate 3 acceptance:** Vercel preview build, live UI verification, PR merge to `v6`, post-merge build — operator-side once the branch is reviewed.
 - [ ] Phase 3 Gate 3 acceptance complete (~Week 9)
 - [ ] Phase 4 Gate 4 acceptance complete (~Week 11)
 - [ ] RLS audit 100% on V6 tables

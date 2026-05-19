@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function PlatformAuditPage(props: {
   searchParams: Promise<{
     organization_id?: string;
+    user_id?: string;
     action?: string;
     from?: string;
     to?: string;
@@ -32,6 +33,7 @@ export default async function PlatformAuditPage(props: {
   const rows = await recentAuditRows(
     {
       organization_id: sp.organization_id || null,
+      user_id: sp.user_id || null,
       action: sp.action || null,
       from_ts: sp.from || null,
       to_ts: sp.to || null,
@@ -56,7 +58,8 @@ export default async function PlatformAuditPage(props: {
         <CardContent>
           <form
             action="/platform/audit"
-            className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"
+            className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end"
+            data-testid="platform-audit-filters"
           >
             <div>
               <Label htmlFor="organization_id">Organization ID</Label>
@@ -65,6 +68,16 @@ export default async function PlatformAuditPage(props: {
                 name="organization_id"
                 placeholder="uuid"
                 defaultValue={sp.organization_id ?? ""}
+              />
+            </div>
+            <div>
+              <Label htmlFor="user_id">User ID (actor)</Label>
+              <Input
+                id="user_id"
+                name="user_id"
+                placeholder="uuid"
+                defaultValue={sp.user_id ?? ""}
+                data-testid="audit-user-id"
               />
             </div>
             <div>

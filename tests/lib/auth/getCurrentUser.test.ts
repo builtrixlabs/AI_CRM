@@ -111,6 +111,8 @@ describe("getCurrentUser", () => {
         { workspace_id: "ws-1", app_role: "sales_rep" },
         { workspace_id: null, app_role: "manager" },
       ],
+      // D-606 — overlay field; null when no active impersonation cookie.
+      impersonation: null,
     });
   });
 

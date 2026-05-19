@@ -4,6 +4,7 @@ import { Lato, Montserrat, JetBrains_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
+import { ImpersonationBanner } from "@/components/platform/impersonation-banner";
 
 // Builtrix Design System — Living Intelligence:
 //   Lato (body/UI), Montserrat (display/headings), JetBrains Mono (numerics).
@@ -54,7 +55,12 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <ThemeProvider initialTheme={initialTheme}>{children}</ThemeProvider>
+        <ThemeProvider initialTheme={initialTheme}>
+          {/* D-606 — global impersonation banner; renders only when an
+              active impersonation cookie is present. */}
+          <ImpersonationBanner />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );
