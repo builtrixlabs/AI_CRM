@@ -54,10 +54,19 @@ function getSigningSecret(): Uint8Array {
   return hexToBytes(hex);
 }
 
+// TS5.5+ narrows Uint8Array's backing buffer; subtle.importKey wants a
+// concrete ArrayBuffer (no SharedArrayBuffer). Copy into a fresh
+// ArrayBuffer so the resulting view is typed as Uint8Array<ArrayBuffer>.
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(buf).set(u8);
+  return buf;
+}
+
 async function importHmacKey(secret: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    secret,
+    toArrayBuffer(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"],
@@ -69,7 +78,7 @@ async function hmacSign(message: string): Promise<Uint8Array> {
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(message),
+    toArrayBuffer(new TextEncoder().encode(message)),
   );
   return new Uint8Array(sig);
 }
@@ -82,8 +91,8 @@ async function hmacVerify(
   return crypto.subtle.verify(
     "HMAC",
     key,
-    signatureBytes,
-    new TextEncoder().encode(message),
+    toArrayBuffer(signatureBytes),
+    toArrayBuffer(new TextEncoder().encode(message)),
   );
 }
 
